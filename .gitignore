@@ -1,1 +1,23 @@
-venv
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.swp
+*.swo
+
+# Virtual environment
+venv/
+
+# Environment variables
+.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+
+# IDE and editor settings
+.vscode/
+.idea/
