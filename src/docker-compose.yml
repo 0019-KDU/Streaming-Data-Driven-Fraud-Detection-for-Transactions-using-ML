@@ -345,24 +345,7 @@ services:
       - "1025:1025"  # SMTP port
     networks:
       - fraud-detection   
-  notification-service:
-    build: ./notification-service
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      KAFKA_USERNAME: ${KAFKA_USERNAME}
-      KAFKA_PASSWORD: ${KAFKA_PASSWORD}
-      POSTGRES_HOST: postgres
-      POSTGRES_DB: notify-data  # Make sure this matches your users database
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 12345q
-      SMTP_HOST: maildev
-      SMTP_PORT: 1025
-    depends_on:
-      - postgres
-      - maildev
-    networks:
-    - fraud-detection
-    
+
 volumes:
   postgres-db-volume:
   minio_data:
