@@ -196,7 +196,7 @@ class FraudDetectionTraining:
                 sasl_plain_password=self.config['kafka']['password'],
                 value_deserializer=lambda x: json.loads(x.decode('utf-8')),
                 auto_offset_reset='earliest',
-                consumer_timeout_ms=self.config['kafka'].get('timeout', 60000),
+                consumer_timeout_ms=self.config['kafka'].get('timeout', 10000)
             )
 
             messages = [msg.value for msg in consumer]
