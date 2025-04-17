@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 fake = Faker()
 
 class NotificationService:
-    def __init__(self, config_path: str = "/app/config.yaml"):
+    def __init__(self):
         # Load environment variables
         load_dotenv(dotenv_path="/app/.env")
 
@@ -173,3 +173,7 @@ Fraud Prevention Team
             if self.consumer:
                 self.consumer.close()
             logger.info("Notification service stopped")
+
+if __name__ == "__main__":
+    service = NotificationService()
+    service.run()
