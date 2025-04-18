@@ -351,6 +351,10 @@ services:
   notification:
     build: ./notification
     env_file: .env
+    volumes:
+      - ./models:/app/models
+      - ./config.yaml:/app/config.yaml
+      - ./env:/app/.env
     environment:
       - SMTP_HOST=maildev
       - SMTP_PORT=1025
