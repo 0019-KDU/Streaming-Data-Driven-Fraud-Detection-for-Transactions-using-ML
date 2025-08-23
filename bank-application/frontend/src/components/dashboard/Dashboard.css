@@ -1,0 +1,50 @@
+.dashboard-container {
+  padding: 24px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.stat-card {
+  border-radius: 16px !important;
+  background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%) !important;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  backdrop-filter: blur(4px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  height: 180px;
+}
+
+.stat-card:hover {
+  transform: translateY(-8px) !important;
+  box-shadow: 0 16px 48px rgba(31, 38, 135, 0.25) !important;
+}
+
+.stat-card .MuiCardContent-root {
+  padding: 24px !important;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 16px;
+  }
+  
+  .stat-card {
+    height: 160px;
+  }
+}
+
+/* Loading animation */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+.loading {
+  animation: pulse 1.5s infinite;
+}

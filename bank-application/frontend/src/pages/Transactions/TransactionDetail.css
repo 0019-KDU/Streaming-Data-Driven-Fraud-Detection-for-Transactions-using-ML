@@ -1,0 +1,307 @@
+.transaction-detail-page {
+  min-height: 100vh;
+  background-color: #f5f7fa;
+}
+
+.transaction-detail-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.transaction-detail-header {
+  margin-bottom: 2rem;
+}
+
+.back-btn {
+  padding: 0.5rem 1rem;
+  background-color: #f7fafc;
+  color: #667eea;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  transition: all 0.2s;
+}
+
+.back-btn:hover {
+  background-color: #667eea;
+  color: white;
+}
+
+.transaction-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.transaction-title h1 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 2rem;
+}
+
+.status-badge.large {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+.status-badge.large.normal {
+  background-color: #c6f6d5;
+  color: #22543d;
+}
+
+.status-badge.large.fraud {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.detail-card {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.detail-card h3 {
+  color: #2d3748;
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 0.5rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+}
+
+.detail-item .label {
+  color: #718096;
+  font-weight: 500;
+  min-width: 140px;
+}
+
+.detail-item .value {
+  color: #2d3748;
+  font-weight: 500;
+  text-align: right;
+  flex: 1;
+}
+
+.transaction-id {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: #667eea;
+  word-break: break-all;
+}
+
+.amount {
+  color: #667eea;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.customer-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: #f7fafc;
+  border-radius: 8px;
+}
+
+.customer-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.customer-details h4 {
+  margin: 0 0 0.25rem 0;
+  color: #2d3748;
+  font-size: 1.1rem;
+}
+
+.customer-details p {
+  margin: 0;
+  color: #718096;
+  font-size: 0.9rem;
+}
+
+.view-customer-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 1rem;
+  transition: transform 0.2s;
+}
+
+.view-customer-btn:hover {
+  transform: translateY(-2px);
+}
+
+.fraud-analysis {
+  border: 2px solid #e2e8f0;
+}
+
+.fraud-analysis.detail-card {
+  border-color: #fed7d7;
+}
+
+.fraud-status {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.fraud-indicator {
+  padding: 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.fraud-indicator.normal {
+  background-color: #c6f6d5;
+  color: #22543d;
+}
+
+.fraud-indicator.fraud {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
+.fraud-details {
+  margin-bottom: 1.5rem;
+}
+
+.fraud-details h4 {
+  color: #c53030;
+  margin-bottom: 0.75rem;
+}
+
+.fraud-details ul {
+  color: #718096;
+  padding-left: 1.5rem;
+}
+
+.fraud-details li {
+  margin-bottom: 0.25rem;
+}
+
+.risk-metrics {
+  padding: 1rem;
+  background-color: #f7fafc;
+  border-radius: 8px;
+}
+
+.metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.metric .value.high {
+  color: #c53030;
+  font-weight: 600;
+}
+
+.metric .value.low {
+  color: #22543d;
+  font-weight: 600;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.secondary-btn {
+  padding: 0.75rem 1.5rem;
+  background-color: #f7fafc;
+  color: #667eea;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.secondary-btn:hover {
+  background-color: #e2e8f0;
+}
+
+.primary-btn {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.2s;
+}
+
+.primary-btn:hover {
+  transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+  .transaction-detail-content {
+    padding: 1rem;
+  }
+  
+  .transaction-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .detail-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+  
+  .detail-item .value {
+    text-align: left;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+  }
+}
