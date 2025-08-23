@@ -21,3 +21,4 @@ venv/
 # IDE and editor settings
 .vscode/
 .idea/
+data

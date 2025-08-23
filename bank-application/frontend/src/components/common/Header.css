@@ -1,0 +1,386 @@
+.dashboard-container {
+  min-height: 100vh;
+  background-color: #f5f7fa;
+}
+
+.dashboard-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dashboard-header h1 {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-info span {
+  color: white;
+  font-weight: 500;
+}
+
+.logout-btn {
+  padding: 0.5rem 1rem;
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.logout-btn:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.dashboard-main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.stats-section {
+  margin-bottom: 2rem;
+}
+
+.stats-section h2 {
+  color: #2d3748;
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.stat-icon {
+  font-size: 2rem;
+  min-width: 60px;
+  text-align: center;
+}
+
+.stat-info h3 {
+  color: #4a5568;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-number {
+  color: #667eea;
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 2rem;
+}
+
+.sidebar {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+  height: fit-content;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.section-header h3 {
+  color: #2d3748;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.view-all-btn {
+  padding: 0.5rem 1rem;
+  background-color: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.view-all-btn:hover {
+  background-color: #5a67d8;
+}
+
+.customer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.customer-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.customer-item:hover {
+  border-color: #667eea;
+}
+
+.customer-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.customer-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.customer-details h4 {
+  margin: 0 0 0.25rem 0;
+  color: #2d3748;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.customer-details p {
+  margin: 0;
+  color: #718096;
+  font-size: 0.8rem;
+}
+
+.view-btn {
+  padding: 0.4rem 0.8rem;
+  background-color: #f7fafc;
+  color: #667eea;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.view-btn:hover {
+  background-color: #667eea;
+  color: white;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.quick-actions {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+}
+
+.medium-transaction-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.2s;
+}
+
+.medium-transaction-btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn-icon {
+  font-size: 2rem;
+}
+
+.btn-content h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.btn-content p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 0.9rem;
+}
+
+.btn-arrow {
+  font-size: 1.5rem;
+}
+
+.recent-transactions {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+}
+
+.recent-transactions h3 {
+  color: #2d3748;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.transaction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transaction-item {
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.transaction-item:hover {
+  border-color: #667eea;
+}
+
+.transaction-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: center;
+}
+
+.transaction-id {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.merchant {
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.amount {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.status {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.status.normal {
+  background-color: #c6f6d5;
+  color: #22543d;
+}
+
+.status.fraud {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-size: 1.2rem;
+  color: #718096;
+}
+
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  
+  .dashboard-main {
+    padding: 1rem;
+  }
+  
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .transaction-info {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+}
