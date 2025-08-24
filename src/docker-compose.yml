@@ -337,7 +337,32 @@ services:
       - ./env:/app/.env
     networks:
       - fraud-detection
+  notification:
+    build: ./notification
+    env_file: .env
+    environment:
+      - SMTP_HOST=maildev
+      - SMTP_PORT=1025
+      - SMTP_FROM=fraud.alerts@bank.com
+    volumes:
+      - ./models:/app/models
+      - ./config.yaml:/app/config.yaml
+      - ./env:/app/.env  
+    depends_on:
+      - maildev
+    networks:
+      - fraud-detection
 
+  maildev:
+    image: maildev/maildev:latest
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+    environment:
+      - MAILDEV_WEB_PORT=1080
+      - MAILDEV_SMTP_PORT=1025
+    networks:
+      - fraud-detection
 volumes:
   postgres-db-volume:
   minio_data:
