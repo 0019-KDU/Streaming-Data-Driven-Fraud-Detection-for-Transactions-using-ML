@@ -207,7 +207,7 @@ class FraudDetectionTraining:
                 raise ValueError('No messages received from Kafka.')
 
             # Temporal data standardization
-            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, format='mixed')
 
             if 'is_fraud' not in df.columns:
                 raise ValueError('Fraud label (is_fraud) missing from Kafka data')
