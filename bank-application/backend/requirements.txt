@@ -9,3 +9,5 @@ pydantic[email]
 pydantic-settings
 alembic
 python-dotenv
+faker
+confluent_kafka
