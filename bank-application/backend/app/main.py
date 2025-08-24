@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import auth, customers, transactions, dashboard , accounts
+from app.api.v1 import auth, customers, transactions, dashboard , accounts , payments
 from app.config.database import engine
 from app.db.base import Base
 
@@ -24,6 +24,8 @@ app.include_router(customers.router, prefix="/api/v1/customers", tags=["Customer
 app.include_router(transactions.router, prefix="/api/v1/transactions", tags=["Transactions"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["Accounts"])
+app.include_router(payments.router, prefix="/api/v1/payments", tags=["Payments"])  # Add this line
+
 @app.get("/")
 def root():
     return {"message": "Bank Management System API"}

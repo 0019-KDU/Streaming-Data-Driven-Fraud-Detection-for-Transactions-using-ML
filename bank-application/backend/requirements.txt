@@ -11,3 +11,4 @@ alembic
 python-dotenv
 faker
 confluent_kafka
+kafka-python
