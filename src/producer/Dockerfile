@@ -9,12 +9,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements_api.txt .
-RUN pip install --no-cache-dir -r requirements_api.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py .
-COPY ../.env .env
+COPY .env .env
 
 # Expose FastAPI port
 EXPOSE 8000

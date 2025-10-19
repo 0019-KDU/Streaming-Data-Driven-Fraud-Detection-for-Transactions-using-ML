@@ -343,7 +343,7 @@ services:
     volumes:
       - ./models:/app/models
       - ./config.yaml:/app/config.yaml
-      - ./env:/app/.env
+      - ./.env:/app/.env
       - ./data:/app/data  # Mount for IEEE-CIS data
     networks:
       - fraud-detection
@@ -359,7 +359,7 @@ services:
     volumes:
       - ./models:/app/models
       - ./config.yaml:/app/config.yaml
-      - ./env:/app/.env
+      - ./.env:/app/.env
     depends_on:
       - maildev
     networks:
