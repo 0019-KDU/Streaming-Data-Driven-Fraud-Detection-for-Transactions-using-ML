@@ -12,3 +12,8 @@ scikit-learn
 boto3
 tqdm
 tqdm-joblib
+# Deep Learning for VAE ensemble
+tensorflow>=2.13.0
+keras>=2.13.0
+# Additional utilities
+joblib

@@ -34,6 +34,7 @@ x-airflow-common:
     - ./models:/app/models
     - ./config.yaml:/app/config.yaml
     - ./.env:/app/.env
+    - ./data:/app/data  # Mount for IEEE-CIS dataset
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -316,18 +317,26 @@ services:
     networks:
       - fraud-detection
 
-  producer:
+  # FastAPI REST Producer (for Postman/API submissions)
+  producer-api:
     build: ./producer
+    container_name: producer-api
     env_file: .env
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.env:/app/.env
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
     networks:
       - fraud-detection
 
+  # Enhanced Inference Pipeline
   inference:
     build: ./inference
     env_file: .env
@@ -335,8 +344,11 @@ services:
       - ./models:/app/models
       - ./config.yaml:/app/config.yaml
       - ./env:/app/.env
+      - ./data:/app/data  # Mount for IEEE-CIS data
     networks:
       - fraud-detection
+
+  # Notification Service
   notification:
     build: ./notification
     env_file: .env
@@ -347,12 +359,33 @@ services:
     volumes:
       - ./models:/app/models
       - ./config.yaml:/app/config.yaml
-      - ./env:/app/.env  
+      - ./env:/app/.env
     depends_on:
       - maildev
     networks:
       - fraud-detection
 
+  # Real-time Dashboard (Streamlit)
+  dashboard:
+    build: ./dashboard
+    container_name: fraud-detection-dashboard
+    env_file: .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./.env:/app/.env
+      - ./config.yaml:/app/config.yaml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - fraud-detection
+
+  # MailDev (Email Testing Server)
   maildev:
     image: maildev/maildev:latest
     ports:

@@ -83,20 +83,33 @@ class NotificationService:
     def send_email(self, to_email: str, transaction: Dict[str, Any]) -> bool:
         """Send email notification for a fraudulent transaction."""
         try:
-            # Construct email content
-            subject = f"Fraud Alert: Suspicious Transaction Detected (ID: {transaction['transaction_id']})"
+            # Extract fraud detection details
+            risk_level = transaction.get('risk_level', 'UNKNOWN')
+            fraud_probability = transaction.get('probability', 0.0)
+            decision = transaction.get('decision', 'REVIEW')
+
+            # Construct email content with enhanced details
+            subject = f"🚨 Fraud Alert: {risk_level} Risk Transaction Detected (ID: {transaction['transaction_id']})"
             body = f"""
 Dear Customer,
 
 We have detected a potentially fraudulent transaction on your account. Please review the details below and contact our fraud prevention team if necessary.
 
+🔴 FRAUD DETECTION ALERT
+
 Transaction Details:
 - Transaction ID: {transaction['transaction_id']}
-- User ID: {transaction['user_id']}
-- Amount: {transaction['amount']} {transaction['currency']}
-- Merchant: {transaction['merchant']}
+- User ID: {transaction.get('user_id', 'N/A')}
+- Amount: ${transaction.get('amount', 0.0):.2f} {transaction.get('currency', 'USD')}
+- Merchant: {transaction.get('merchant', 'N/A')}
 - Timestamp: {transaction['timestamp']}
-- Location: {transaction['location']}
+- Location: {transaction.get('location', 'N/A')}
+
+Fraud Analysis:
+- Risk Level: {risk_level}
+- Fraud Probability: {fraud_probability:.1%}
+- Decision: {decision}
+- Action Taken: Transaction has been BLOCKED for your protection
 
 If you did not authorize this transaction, please contact us immediately at support@bank.com.
 

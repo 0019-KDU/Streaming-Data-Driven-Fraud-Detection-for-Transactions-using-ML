@@ -54,7 +54,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy application files
-COPY main.py .
+COPY main_enhanced.py main.py
 
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
@@ -76,7 +76,7 @@ WORKDIR /app
 # Copy artifacts from builder
 COPY --from=builder /spark /spark
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /app/main.py .
+COPY --from=builder /app/main.py main.py
 
 # Environment configuration
 ENV SPARK_HOME=/spark \
