@@ -6,6 +6,7 @@ This module includes all advanced features from research notebook:
 - Velocity Features (optimized time-windows: 1h, 6h, 24h, 7d)
 - Adaptive Threshold System with dynamic adjustment
 - Frequency Encoding for categorical variables
+- SMOTE (Synthetic Minority Over-sampling) for class imbalance
 - 60+ Advanced Features for maximum performance
 - GPU support for training acceleration
 - MLflow experiment tracking and model registry
@@ -38,6 +39,14 @@ from sklearn.metrics import (
 import sys
 sys.path.append(os.path.dirname(__file__))
 from feature_pipeline import IEEECISFeaturePipeline
+
+# SMOTE for handling imbalanced data
+try:
+    from imblearn.over_sampling import SMOTE
+    SMOTE_AVAILABLE = True
+except ImportError:
+    SMOTE_AVAILABLE = False
+    logging.warning("imbalanced-learn not available. SMOTE will be disabled.")
 
 # Boosting models
 try:
@@ -297,6 +306,7 @@ class IEEECISFraudTraining:
     - Velocity Features (optimized time-windows)
     - Adaptive Threshold System
     - Frequency Encoding
+    - SMOTE for class imbalance handling
     - 60+ Advanced Features
     """
 
@@ -718,6 +728,70 @@ class IEEECISFraudTraining:
 
         return train_vae_score, valid_vae_score
 
+    def apply_smote(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        sampling_strategy: str = 'auto',
+        k_neighbors: int = 5
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Apply SMOTE (Synthetic Minority Over-sampling Technique)
+
+        Creates synthetic fraud examples to balance the dataset
+
+        Args:
+            X_train: Training features
+            y_train: Training labels
+            sampling_strategy:
+                - 'auto': Balance to 50/50
+                - float (0.1-1.0): Ratio of minority to majority
+                - 'minority': Same as 'auto'
+            k_neighbors: Number of nearest neighbors for SMOTE
+
+        Returns:
+            Resampled X_train, y_train
+        """
+        if not SMOTE_AVAILABLE:
+            logger.warning("SMOTE not available. Skipping resampling.")
+            return X_train, y_train
+
+        logger.info("Applying SMOTE for class imbalance...")
+        logger.info(f"  Original distribution:")
+        logger.info(f"    Fraud: {y_train.sum():,} ({y_train.mean():.2%})")
+        logger.info(f"    Legit: {(y_train == 0).sum():,} ({(y_train == 0).mean():.2%})")
+
+        # Create SMOTE sampler
+        smote = SMOTE(
+            sampling_strategy=sampling_strategy,
+            k_neighbors=k_neighbors,
+            random_state=RNG,
+            n_jobs=-1
+        )
+
+        # Apply SMOTE
+        try:
+            X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+
+            # Convert back to pandas
+            X_train_resampled = pd.DataFrame(
+                X_train_resampled,
+                columns=X_train.columns
+            )
+            y_train_resampled = pd.Series(y_train_resampled, name='isFraud')
+
+            logger.info(f"  Resampled distribution:")
+            logger.info(f"    Fraud: {y_train_resampled.sum():,} ({y_train_resampled.mean():.2%})")
+            logger.info(f"    Legit: {(y_train_resampled == 0).sum():,} ({(y_train_resampled == 0).mean():.2%})")
+            logger.info(f"  Total samples: {len(X_train):,} → {len(X_train_resampled):,}")
+            logger.info(f"  Synthetic fraud samples created: {len(X_train_resampled) - len(X_train):,}")
+
+            return X_train_resampled, y_train_resampled
+
+        except Exception as e:
+            logger.warning(f"  SMOTE failed: {str(e)}. Using original data.")
+            return X_train, y_train
+
     def train_boosting_model(
         self,
         X_train: pd.DataFrame,
@@ -1131,6 +1205,14 @@ class IEEECISFraudTraining:
             X_valid['vae_anomaly_score'] = valid_vae_score
             self.all_features.append('vae_anomaly_score')
             logger.info(f"  VAE anomaly score added to features (Total: {len(self.all_features)})")
+
+        # Apply SMOTE for class imbalance (OPTIONAL - can be disabled in config)
+        use_smote = self.config.get("training", {}).get("use_smote", True)
+        if use_smote and SMOTE_AVAILABLE:
+            # Use conservative sampling strategy (0.3 means 30% of majority class)
+            # Full balance (1.0) creates too many synthetic samples
+            sampling_strategy = self.config.get("training", {}).get("smote_sampling_strategy", 0.3)
+            X_train, y_train = self.apply_smote(X_train, y_train, sampling_strategy=sampling_strategy)
 
         # Train gradient boosting
         model = self.train_boosting_model(X_train, y_train, X_valid, y_valid)
