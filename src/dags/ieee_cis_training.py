@@ -974,12 +974,22 @@ class IEEECISFraudTraining:
         logger.info("Saving model artifacts...")
 
         model_path = self.config["training"]["model_path"]
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        model_dir = os.path.dirname(model_path)
+        os.makedirs(model_dir, exist_ok=True)
 
-        # Save main artifact bundle
+        # Save VAE models separately using Keras format (NOT in joblib pickle)
+        if TF_AVAILABLE and self.vae_models:
+            vae_dir = os.path.join(model_dir, "vae_models")
+            os.makedirs(vae_dir, exist_ok=True)
+            for i, vae in enumerate(self.vae_models):
+                vae_path = os.path.join(vae_dir, f"vae_{i}.keras")
+                vae.save(vae_path)
+                logger.info(f"  VAE model {i+1} saved to: {vae_path}")
+
+        # Save main artifact bundle WITHOUT VAE models (just metadata)
         artifact_bundle = {
             'calibrated_model': model,
-            'vae_models': self.vae_models if TF_AVAILABLE else [],
+            'n_vae_models': len(self.vae_models) if TF_AVAILABLE else 0,
             'scaler': self.scaler,
             'freq_maps': self.freq_maps,
             'feature_names': self.all_features,

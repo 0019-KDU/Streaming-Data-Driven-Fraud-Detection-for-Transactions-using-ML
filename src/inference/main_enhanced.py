@@ -84,15 +84,43 @@ class EnhancedFraudDetectionInference:
             raise
 
     def _load_model(self, model_path):
-        """Load trained model"""
+        """Load trained model and VAE models separately"""
         try:
             if not os.path.exists(model_path):
                 logger.warning(f"Model not found at {model_path}, using fallback")
                 return None
 
-            model = joblib.load(model_path)
-            logger.info(f"Model loaded from {model_path}")
-            return model
+            # Load main model bundle (WITHOUT VAE models inside)
+            model_bundle = joblib.load(model_path)
+            logger.info(f"Model bundle loaded from {model_path}")
+
+            # Load VAE models separately if they exist
+            model_dir = os.path.dirname(model_path)
+            vae_dir = os.path.join(model_dir, "vae_models")
+
+            if os.path.exists(vae_dir):
+                try:
+                    from tensorflow import keras
+                    import ieee_cis_training  # Import for custom classes
+
+                    vae_models = []
+                    n_vae_models = model_bundle.get('n_vae_models', 0)
+
+                    for i in range(n_vae_models):
+                        vae_path = os.path.join(vae_dir, f"vae_{i}.keras")
+                        if os.path.exists(vae_path):
+                            vae = keras.models.load_model(vae_path)
+                            vae_models.append(vae)
+                            logger.info(f"  VAE model {i+1} loaded from {vae_path}")
+
+                    # Add VAE models back into bundle for inference
+                    model_bundle['vae_models'] = vae_models
+                    logger.info(f"  Loaded {len(vae_models)} VAE models successfully")
+                except Exception as e:
+                    logger.warning(f"  Could not load VAE models: {str(e)}")
+                    model_bundle['vae_models'] = []
+
+            return model_bundle
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
             raise
