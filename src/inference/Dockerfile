@@ -55,7 +55,7 @@ RUN pip install -r requirements.txt
 
 # Copy application files
 COPY main_enhanced.py main.py
-COPY ../dags/ieee_cis_training.py ieee_cis_training.py
+COPY ieee_cis_training.py ieee_cis_training.py
 
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
