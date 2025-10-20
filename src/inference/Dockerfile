@@ -1,5 +1,5 @@
 # Stage 1: Builder stage
-FROM python:3.10.16-slim-bookworm as builder
+FROM python:3.12-slim-bookworm as builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -58,7 +58,7 @@ COPY main_enhanced.py main.py
 COPY ieee_cis_training.py ieee_cis_training.py
 
 # Stage 2: Runtime stage
-FROM python:3.10.16-slim-bookworm as runtime
+FROM python:3.12-slim-bookworm as runtime
 
 # Install runtime dependencies
 RUN apt-get update && \
