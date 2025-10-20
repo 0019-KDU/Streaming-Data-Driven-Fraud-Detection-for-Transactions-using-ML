@@ -67,11 +67,19 @@ class EnhancedFraudDetectionInference:
         self.broadcast_pipeline = self.spark.sparkContext.broadcast(self.feature_pipeline)
 
         # Load inference configuration
-        self.threshold = self.config["inference"]["threshold"]
-        self.risk_bands = self.config["inference"]["risk_bands"]
+        # Use adaptive threshold from trained model if available, otherwise fall back to config
+        if self.model and 'adaptive_threshold_system' in self.model:
+            self.adaptive_threshold_system = self.model['adaptive_threshold_system']
+            self.threshold = self.adaptive_threshold_system.current_threshold
+            logger.info(f"✓ Using adaptive threshold from trained model: {self.threshold:.4f}")
+            logger.info(f"  Threshold range: [{self.adaptive_threshold_system.min_threshold:.2f}, {self.adaptive_threshold_system.max_threshold:.2f}]")
+        else:
+            self.adaptive_threshold_system = None
+            self.threshold = self.config["inference"]["threshold"]
+            logger.info(f"Using fixed threshold from config: {self.threshold}")
 
-        logger.info(f"Inference threshold: {self.threshold}")
-        logger.info(f"Risk bands: {self.risk_bands}")
+        self.risk_bands = self.config["inference"]["risk_bands"]
+        logger.info(f"Risk bands: HIGH={self.risk_bands['high']}, MEDIUM={self.risk_bands['medium']}")
 
     @staticmethod
     def _load_config(config_path):
