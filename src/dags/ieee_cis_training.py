@@ -189,6 +189,18 @@ if TF_AVAILABLE:
             )
             return reconstruction_error.numpy()
 
+        def get_config(self):
+            """Get config for serialization"""
+            return {
+                'input_dim': self.input_dim,
+                'latent_dim': self.latent_dim
+            }
+
+        @classmethod
+        def from_config(cls, config):
+            """Create from config"""
+            return cls(**config)
+
 
 # ==================== ADAPTIVE THRESHOLD SYSTEM ====================
 class AdaptiveThresholdSystem:
