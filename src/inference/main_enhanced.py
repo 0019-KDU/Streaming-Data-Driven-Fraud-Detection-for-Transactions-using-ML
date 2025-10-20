@@ -281,32 +281,32 @@ class EnhancedFraudDetectionInference:
         return df
 
     def add_features(self, df):
-        """Add engineered features for model inference"""
-        # Temporal features
-        df = df.withColumn("transaction_hour", hour(col("timestamp")))
-        df = df.withColumn("transaction_day_of_week", dayofweek(col("timestamp")))
-        df = df.withColumn("is_weekend",
-                           when((col("transaction_day_of_week") == 1) | (col("transaction_day_of_week") == 7), 1).otherwise(0))
-        df = df.withColumn("is_night",
-                           when((col("transaction_hour") >= 22) | (col("transaction_hour") <= 6), 1).otherwise(0))
+        """Add engineered features EXACTLY matching training"""
+        # Temporal features - MATCH TRAINING NAMES
+        df = df.withColumn("hour", hour(col("timestamp")))
+        df = df.withColumn("day", dayofweek(col("timestamp")))
+        df = df.withColumn("dt_is_weekend",
+                           when((col("day") == 1) | (col("day") == 7), 1).otherwise(0))
+        df = df.withColumn("dt_is_night",
+                           when((col("hour") >= 22) | (col("hour") <= 6), 1).otherwise(0))
 
-        # Amount features
-        df = df.withColumn("log_amt", when(col("amount") > 0, lit(1) + col("amount")).otherwise(lit(1)))
-        df = df.withColumn("log_amt", lit(1))  # Placeholder - will be computed in UDF
-        df = df.withColumn("sqrt_amt", lit(1))  # Placeholder
-
-        # Email features
+        # Email features - MATCH TRAINING NAMES
         df = df.withColumn("email_match",
                            when((col("P_emaildomain") == col("R_emaildomain")) &
                                 col("P_emaildomain").isNotNull(), 1).otherwise(0))
 
-        risky_domains = ['anonymous.com', 'mailinator.com', 'tempmail.com']
-        df = df.withColumn("email_is_risky",
+        # IMPORTANT: Use 'email_risky' not 'email_is_risky' to match training
+        risky_domains = ['anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
+                        'yopmail.com', '10minutemail.com', 'guerrillamail.com']
+        df = df.withColumn("email_risky",
                            when(col("P_emaildomain").isin(risky_domains), 1).otherwise(0))
 
         generic_domains = ['gmail.com', 'yahoo.com', 'hotmail.com']
         df = df.withColumn("email_is_generic",
                            when(col("P_emaildomain").isin(generic_domains), 1).otherwise(0))
+
+        # Add TransactionAmt column (maps from amount)
+        df = df.withColumn("TransactionAmt", col("amount"))
 
         return df
 
@@ -337,18 +337,19 @@ class EnhancedFraudDetectionInference:
         @pandas_udf("struct<probability:double,prediction:int,risk_level:string,decision:string>")
         def predict_with_risk_udf(
             transaction_id: pd.Series,
-            amount: pd.Series,
+            TransactionAmt: pd.Series,
             card1: pd.Series,
             card2: pd.Series,
             addr1: pd.Series,
             P_emaildomain: pd.Series,
             R_emaildomain: pd.Series,
             ProductCD: pd.Series,
-            transaction_hour: pd.Series,
-            is_weekend: pd.Series,
-            is_night: pd.Series,
+            hour: pd.Series,
+            day: pd.Series,
+            dt_is_weekend: pd.Series,
+            dt_is_night: pd.Series,
             email_match: pd.Series,
-            email_is_risky: pd.Series,
+            email_risky: pd.Series,
             email_is_generic: pd.Series
         ) -> pd.DataFrame:
             """
