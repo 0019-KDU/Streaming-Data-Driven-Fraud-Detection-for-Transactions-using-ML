@@ -55,6 +55,7 @@ RUN pip install -r requirements.txt
 
 # Copy application files
 COPY main_enhanced.py main.py
+COPY ../dags/ieee_cis_training.py ieee_cis_training.py
 
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
@@ -77,6 +78,7 @@ WORKDIR /app
 COPY --from=builder /spark /spark
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/main.py main.py
+COPY --from=builder /app/ieee_cis_training.py ieee_cis_training.py
 
 # Environment configuration
 ENV SPARK_HOME=/spark \

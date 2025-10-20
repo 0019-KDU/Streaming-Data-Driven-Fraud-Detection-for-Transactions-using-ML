@@ -1,0 +1,287 @@
+<mxfile host="app.diagrams.net" modified="2025-10-20T00:00:00.000Z" agent="draw.io" version="22.1.0" etag="system-architecture">
+  <diagram name="Fraud Detection System Architecture" id="fraud-detection-architecture">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Real-Time Fraud Detection System - IEEE-CIS ML Pipeline" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="800" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 1: Data Sources -->
+        <mxCell id="layer1-title" value="Data Sources" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="150" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Kafka Cloud -->
+        <mxCell id="kafka-cloud" value="Confluent Kafka Cloud&#xa;(Transaction Stream)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- IEEE-CIS Dataset -->
+        <mxCell id="ieee-dataset" value="IEEE-CIS Dataset&#xa;590K Transactions&#xa;144K Identity Records" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 2: Ingestion -->
+        <mxCell id="layer2-title" value="Ingestion &amp; Orchestration" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="250" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Producer REST API -->
+        <mxCell id="producer-api" value="Producer REST API&#xa;(FastAPI)&#xa;Port: 8000&#xa;&#xa;POST /predict&#xa;Kafka Integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="320" y="120" width="180" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Airflow -->
+        <mxCell id="airflow" value="Apache Airflow&#xa;(ML Training Orchestration)&#xa;Port: 8080&#xa;&#xa;DAG: ieee_cis_fraud_detection_training&#xa;- Validate Environment&#xa;- Execute Training&#xa;- Cleanup Resources" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="320" y="240" width="180" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 3: Processing -->
+        <mxCell id="layer3-title" value="Stream Processing &amp; ML Training" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="580" y="80" width="300" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Inference Service -->
+        <mxCell id="inference" value="Inference Service&#xa;(Spark Structured Streaming)&#xa;&#xa;Features:&#xa;• Real-time scoring&#xa;• VAE Anomaly Detection&#xa;• Velocity Features&#xa;• Adaptive Threshold&#xa;• Model: XGBoost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left" vertex="1" parent="1">
+          <mxGeometry x="580" y="120" width="220" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- ML Training Pipeline -->
+        <mxCell id="ml-training" value="ML Training Pipeline&#xa;(ieee_cis_training.py)&#xa;&#xa;1. Load &amp; Merge Data (590K rows)&#xa;2. Feature Engineering (49 features):&#xa;   • Velocity (1h, 6h, 24h, 7d)&#xa;   • Frequency Encoding&#xa;   • Email Risk Indicators&#xa;3. Train VAE Ensemble (3 models)&#xa;4. Train Boosting Models:&#xa;   • XGBoost (2000 trees)&#xa;   • LightGBM (5000 trees)&#xa;   • CatBoost (3000 iterations)&#xa;5. Calibrate Probabilities&#xa;6. Initialize Adaptive Threshold" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left" vertex="1" parent="1">
+          <mxGeometry x="580" y="280" width="220" height="220" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 4: Storage -->
+        <mxCell id="layer4-title" value="Storage &amp; Model Registry" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="860" y="80" width="250" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- PostgreSQL -->
+        <mxCell id="postgres" value="PostgreSQL&#xa;Port: 5432&#xa;&#xa;Airflow Metadata&#xa;MLflow Backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="860" y="120" width="160" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Redis -->
+        <mxCell id="redis" value="Redis&#xa;Port: 6379&#xa;&#xa;Celery Broker&#xa;Caching" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="860" y="230" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- MinIO -->
+        <mxCell id="minio" value="MinIO (S3-compatible)&#xa;Port: 9000 (API), 9001 (Console)&#xa;&#xa;MLflow Artifacts&#xa;Model Storage&#xa;fraud_detection_model.pkl&#xa;feature_pipeline.pkl" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="860" y="330" width="160" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- MLflow -->
+        <mxCell id="mlflow" value="MLflow Server&#xa;Port: 5000&#xa;&#xa;Experiment Tracking&#xa;Model Registry&#xa;Metrics &amp; Parameters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="860" y="470" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 5: Output -->
+        <mxCell id="layer5-title" value="Output &amp; Monitoring" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="1080" y="80" width="220" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Dashboard -->
+        <mxCell id="dashboard" value="Streamlit Dashboard&#xa;Port: 8501&#xa;&#xa;Real-time Monitoring:&#xa;• Fraud Predictions&#xa;• Risk Scores&#xa;• Transaction Volume&#xa;• Alert History" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1080" y="120" width="180" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Notification Service -->
+        <mxCell id="notification" value="Notification Service&#xa;(Email Alerts)&#xa;&#xa;Kafka Consumer&#xa;SMTP: MailDev (1025)&#xa;UI: Port 1080" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1080" y="260" width="180" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Kafka Topics -->
+        <mxCell id="kafka-topics" value="Kafka Topics:&#xa;• transactions (input)&#xa;• fraud_predictions (output)&#xa;• legit_predictions&#xa;• transaction_replies" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1080" y="380" width="180" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- MailDev -->
+        <mxCell id="maildev" value="MailDev&#xa;Port: 1080&#xa;&#xa;Email Testing UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="1080" y="500" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Infrastructure Box -->
+        <mxCell id="infra-box" value="Infrastructure: DigitalOcean VM&#xa;8 vCPU Intel | 32 GB RAM | 640 GB NVMe SSD | Ubuntu" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=2;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="620" width="1260" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Docker Network -->
+        <mxCell id="docker-network" value="Docker Network: fraud-detection" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=2;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="680" width="1260" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Advanced Features Box -->
+        <mxCell id="features-box" value="Advanced ML Features (49 Total):&#xa;• Velocity Features: Transaction count/amount per user in 1h, 6h, 24h, 7d windows&#xa;• VAE Ensemble: 3 Variational Autoencoders for anomaly detection&#xa;• Frequency Encoding: 11 categorical columns&#xa;• Email Risk Indicators: Risky domain detection&#xa;• Adaptive Threshold: Dynamic fraud detection threshold (F1-optimal: 0.1371)&#xa;• Model Calibration: Probability calibration for better confidence scores" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;align=left" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="600" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Model Performance Box -->
+        <mxCell id="performance-box" value="Model Performance (Validation Set):&#xa;• Best Model: XGBoost (2000 trees, max_depth=6)&#xa;• AUC-PR: 0.1781&#xa;• AUC-ROC: 0.7505&#xa;• Precision: 0.2233 | Recall: 0.2816 | F1-Score: 0.2491&#xa;• Training Dataset: 590,540 transactions (3.5% fraud rate)&#xa;• Train/Valid Split: 472K / 118K (chronological)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left" vertex="1" parent="1">
+          <mxGeometry x="680" y="730" width="600" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows: Data Flow -->
+
+        <!-- Kafka to Producer API -->
+        <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0066CC;" edge="1" parent="1" source="kafka-cloud" target="producer-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow1-label" value="Stream" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow1">
+          <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Producer to Inference -->
+        <mxCell id="arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0066CC;" edge="1" parent="1" source="producer-api" target="inference">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow2-label" value="POST /predict" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow2">
+          <mxGeometry x="-0.1" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- IEEE Dataset to Airflow -->
+        <mxCell id="arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#00CC66;" edge="1" parent="1" source="ieee-dataset" target="airflow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow3-label" value="CSV Files" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow3">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Airflow to ML Training -->
+        <mxCell id="arrow4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#00CC66;" edge="1" parent="1" source="airflow" target="ml-training">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow4-label" value="Trigger DAG" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow4">
+          <mxGeometry x="-0.1" y="2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ML Training to MinIO -->
+        <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#CC6600;" edge="1" parent="1" source="ml-training" target="minio">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow5-label" value="Save Model" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow5">
+          <mxGeometry x="-0.1" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ML Training to MLflow -->
+        <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#9900CC;dashed=1;" edge="1" parent="1" source="ml-training" target="mlflow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow6-label" value="Log Metrics" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow6">
+          <mxGeometry x="-0.1" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Inference to MinIO -->
+        <mxCell id="arrow7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#CC6600;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="inference" target="minio">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow7-label" value="Load Model" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow7">
+          <mxGeometry x="-0.1" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Inference to Kafka Topics -->
+        <mxCell id="arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0066CC;" edge="1" parent="1" source="inference" target="kafka-topics">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="690" y="430" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow8-label" value="Publish Results" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow8">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Kafka Topics to Dashboard -->
+        <mxCell id="arrow9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0066CC;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="kafka-topics" target="dashboard">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1320" y="430" />
+              <mxPoint x="1320" y="180" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow9-label" value="Stream" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow9">
+          <mxGeometry x="-0.1" y="2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Kafka Topics to Notification -->
+        <mxCell id="arrow10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0066CC;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="kafka-topics" target="notification">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow10-label" value="Consume" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow10">
+          <mxGeometry x="-0.1" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Notification to MailDev -->
+        <mxCell id="arrow11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#CC0000;" edge="1" parent="1" source="notification" target="maildev">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow11-label" value="SMTP" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow11">
+          <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Airflow to PostgreSQL -->
+        <mxCell id="arrow12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;strokeColor=#666666;dashed=1;" edge="1" parent="1" source="airflow" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Airflow to Redis -->
+        <mxCell id="arrow13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;strokeColor=#666666;dashed=1;" edge="1" parent="1" source="airflow" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend-box" value="Legend" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="120" width="240" height="200" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-1" value="Data Flow (Real-time)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#0066CC;fillColor=none;fontSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="145" width="140" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-2" value="Training Flow" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#00CC66;fillColor=none;fontSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="170" width="100" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-3" value="Model Storage" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#CC6600;fillColor=none;fontSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="195" width="110" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-4" value="Alerts" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#CC0000;fillColor=none;fontSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="220" width="60" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-5" value="Metadata (optional)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#666666;fillColor=none;fontSize=10;strokeWidth=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="245" width="140" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
