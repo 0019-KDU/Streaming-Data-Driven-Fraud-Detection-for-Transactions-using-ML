@@ -34,6 +34,7 @@ x-airflow-common:
     - ./models:/app/models
     - ./config.yaml:/app/config.yaml
     - ./.env:/app/.env
+    - ./data:/app/data  # Mount for IEEE-CIS dataset
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -207,8 +208,8 @@ services:
           echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
           echo
         fi
-        mkdir -p /sources/logs /sources/dags /sources/plugins
-        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/models
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,models}
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
@@ -312,31 +313,42 @@ services:
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-    command: mlflow server --port 5500 --host 0.0.0.0 --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres/mlflow --default-artifact-root s3://mlflow
+    command: mlflow server --port 5500 --host 0.0.0.0 --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres/mlflow --default-artifact-root s3://mlflow --gunicorn-opts "--timeout 300"
     networks:
       - fraud-detection
 
-  producer:
+  # FastAPI REST Producer (for Postman/API submissions)
+  producer-api:
     build: ./producer
+    container_name: producer-api
     env_file: .env
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.env:/app/.env
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
     networks:
       - fraud-detection
 
+  # Enhanced Inference Pipeline
   inference:
     build: ./inference
     env_file: .env
     volumes:
       - ./models:/app/models
       - ./config.yaml:/app/config.yaml
-      - ./env:/app/.env
+      - ./.env:/app/.env
+      - ./data:/app/data  # Mount for IEEE-CIS data
     networks:
       - fraud-detection
+
+  # Notification Service
   notification:
     build: ./notification
     env_file: .env
@@ -347,12 +359,33 @@ services:
     volumes:
       - ./models:/app/models
       - ./config.yaml:/app/config.yaml
-      - ./env:/app/.env  
+      - ./.env:/app/.env
     depends_on:
       - maildev
     networks:
       - fraud-detection
 
+  # Real-time Dashboard (Streamlit)
+  dashboard:
+    build: ./dashboard
+    container_name: fraud-detection-dashboard
+    env_file: .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./.env:/app/.env
+      - ./config.yaml:/app/config.yaml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - fraud-detection
+
+  # MailDev (Email Testing Server)
   maildev:
     image: maildev/maildev:latest
     ports:

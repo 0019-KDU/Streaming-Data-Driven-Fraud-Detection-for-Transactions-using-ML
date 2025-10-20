@@ -1,5 +1,5 @@
 # Stage 1: Builder stage
-FROM python:3.10.16-slim-bookworm as builder
+FROM python:3.12-slim-bookworm as builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -54,10 +54,11 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy application files
-COPY main.py .
+COPY main_enhanced.py main.py
+COPY ieee_cis_training.py ieee_cis_training.py
 
 # Stage 2: Runtime stage
-FROM python:3.10.16-slim-bookworm as runtime
+FROM python:3.12-slim-bookworm as runtime
 
 # Install runtime dependencies
 RUN apt-get update && \
@@ -66,6 +67,7 @@ RUN apt-get update && \
     procps \
     ca-certificates \
     curl \
+    libgomp1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -76,7 +78,8 @@ WORKDIR /app
 # Copy artifacts from builder
 COPY --from=builder /spark /spark
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /app/main.py .
+COPY --from=builder /app/main.py main.py
+COPY --from=builder /app/ieee_cis_training.py ieee_cis_training.py
 
 # Environment configuration
 ENV SPARK_HOME=/spark \

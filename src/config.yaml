@@ -12,7 +12,24 @@ kafka:
   password: "HIhrR1hP0Oj64llWYN8E4U3gnsJ83b64OGcrFDYvnkTppiMo1UkMwUUdfSFr6PLl"
   topic: "transactions"
   output_topic: "fraud_predictions"
+  legit_topic: "legit_predictions"
+  reply_topic: "transaction_replies"  # For sync scoring (optional)
   security_protocol: "SASL_SSL"
+
+# IEEE-CIS Dataset Configuration
+data:
+  ieee_cis:
+    train_transaction_path: "/app/data/ieee_cis/train_transaction.csv"
+    train_identity_path: "/app/data/ieee_cis/train_identity.csv"
+    chronological_split_ratio: 0.80  # 80% earliest for train, 20% latest for validation
+
+# Training Configuration
+training:
+  use_external_model: true  # Set to true to use model from fyp.ipynb, false to retrain
+  model_path: "/app/models/fraud_detection_model.pkl"
+  feature_pipeline_path: "/app/models/feature_pipeline.pkl"
+  experiment_name: "ieee_cis_fraud_detection"
+  force_cpu_only: true  # Skip GPU attempts, use CPU directly (for VMs without GPU)
 
 model:
   test_size: 0.2
@@ -25,7 +42,23 @@ model:
     colsample_bytree: 0.8
     scale_pos_weight: 1
     tree_method: "hist"
-  path: "/app/models/fraud_detection_model.pkl"  
+  path: "/app/models/fraud_detection_model.pkl"
+  feature_pipeline_path: "/app/models/feature_pipeline.pkl"
+
+# Inference Configuration
+inference:
+  threshold: 0.6  # Base fraud probability threshold
+  risk_bands:
+    high: 0.9     # >= 0.9 = HIGH risk
+    medium: 0.6   # >= 0.6 = MEDIUM risk
+    # < 0.6 = LOW risk
+  sync_scoring_timeout_ms: 2000  # Timeout for synchronous scoring (optional feature)
+
+# Dashboard Configuration
+dashboard:
+  port: 8501  # Streamlit default port
+  refresh_interval_seconds: 2
+  max_display_rows: 100
 
 spark:
   app_name: "FraudDetectionInference"
