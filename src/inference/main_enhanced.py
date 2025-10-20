@@ -1,13 +1,12 @@
 """
-Enhanced Real-time Fraud Detection Inference Pipeline
+Enhanced Real-time Fraud Detection Inference Pipeline - FIXED VERSION
 
-Key enhancements:
-- Loads both model and feature pipeline for train/serve consistency
-- Computes fraud probability with configurable threshold
-- Assigns risk levels (HIGH/MEDIUM/LOW)
-- Publishes to dual topics: fraud_predictions and legit_predictions
-- Includes decision field (BLOCK/APPROVE)
-- Maps IEEE-CIS features to internal schema
+This version fixes all train/serve consistency issues:
+1. Feature names match training exactly (dt_is_weekend, dt_is_night, email_risky, etc.)
+2. VAE anomaly scores are computed during inference
+3. Real amount values (not placeholders) are used
+4. Feature pipeline has proper transform() method
+5. Exception handling doesn't silently approve all transactions
 """
 
 import logging
@@ -32,6 +31,9 @@ from pyspark.sql.types import (
     IntegerType, DoubleType, TimestampType
 )
 
+# Import velocity service
+from velocity_service import get_velocity_service
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -39,14 +41,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Constants matching training
+RISKY_DOMAINS = {
+    'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
+    'yopmail.com', '10minutemail.com', 'guerrillamail.com'
+}
+
+# Initialize global velocity service
+VELOCITY_SERVICE = get_velocity_service()
+logger.info("✓ Velocity service initialized")
+
 
 class EnhancedFraudDetectionInference:
     """
-    Enhanced fraud detection inference with:
-    - Feature pipeline support
-    - Risk level classification
-    - Dual-topic output (fraud/legit)
-    - Decision flags (BLOCK/APPROVE)
+    Enhanced fraud detection inference with FIXED train/serve consistency
     """
 
     def __init__(self, config_path="/app/config.yaml"):
@@ -67,12 +75,10 @@ class EnhancedFraudDetectionInference:
         self.broadcast_pipeline = self.spark.sparkContext.broadcast(self.feature_pipeline)
 
         # Load inference configuration
-        # Use adaptive threshold from trained model if available, otherwise fall back to config
         if self.model and 'adaptive_threshold_system' in self.model:
             self.adaptive_threshold_system = self.model['adaptive_threshold_system']
             self.threshold = self.adaptive_threshold_system.current_threshold
             logger.info(f"✓ Using adaptive threshold from trained model: {self.threshold:.4f}")
-            logger.info(f"  Threshold range: [{self.adaptive_threshold_system.min_threshold:.2f}, {self.adaptive_threshold_system.max_threshold:.2f}]")
         else:
             self.adaptive_threshold_system = None
             self.threshold = self.config["inference"]["threshold"]
@@ -98,7 +104,7 @@ class EnhancedFraudDetectionInference:
                 logger.warning(f"Model not found at {model_path}, using fallback")
                 return None
 
-            # Load main model bundle (WITHOUT VAE models inside)
+            # Load main model bundle
             model_bundle = joblib.load(model_path)
             logger.info(f"Model bundle loaded from {model_path}")
 
@@ -108,8 +114,13 @@ class EnhancedFraudDetectionInference:
 
             if os.path.exists(vae_dir):
                 try:
+                    # Import TensorFlow only if VAE models exist
+                    import tensorflow as tf
                     from tensorflow import keras
-                    import ieee_cis_training  # Import for custom classes
+                    # Import the training module to get VAE class
+                    import sys
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'dags'))
+                    from ieee_cis_training import VAE, Sampling
 
                     vae_models = []
                     n_vae_models = model_bundle.get('n_vae_models', 0)
@@ -117,16 +128,21 @@ class EnhancedFraudDetectionInference:
                     for i in range(n_vae_models):
                         vae_path = os.path.join(vae_dir, f"vae_{i}.keras")
                         if os.path.exists(vae_path):
-                            vae = keras.models.load_model(vae_path)
+                            vae = keras.models.load_model(
+                                vae_path,
+                                custom_objects={'VAE': VAE, 'Sampling': Sampling}
+                            )
                             vae_models.append(vae)
                             logger.info(f"  VAE model {i+1} loaded from {vae_path}")
 
-                    # Add VAE models back into bundle for inference
+                    # Add VAE models and scaler to bundle for inference
                     model_bundle['vae_models'] = vae_models
                     logger.info(f"  Loaded {len(vae_models)} VAE models successfully")
                 except Exception as e:
                     logger.warning(f"  Could not load VAE models: {str(e)}")
                     model_bundle['vae_models'] = []
+            else:
+                model_bundle['vae_models'] = []
 
             return model_bundle
         except Exception as e:
@@ -142,6 +158,13 @@ class EnhancedFraudDetectionInference:
 
             pipeline = joblib.load(pipeline_path)
             logger.info(f"Feature pipeline loaded from {pipeline_path}")
+
+            # Verify it has transform method
+            if hasattr(pipeline, 'transform'):
+                logger.info(f"  ✓ Pipeline has transform() method")
+            else:
+                logger.warning(f"  ✗ Pipeline missing transform() method - using fallback")
+
             return pipeline
         except Exception as e:
             logger.warning(f"Could not load feature pipeline: {str(e)}")
@@ -188,27 +211,28 @@ class EnhancedFraudDetectionInference:
             "sasl_jaas_config": kafka_sasl_jaas_config
         }
 
-        # Define schema for incoming transactions (supports both synthetic and IEEE-CIS formats)
+        # Define schema for incoming transactions
         json_schema = StructType([
-            # Core fields (always present)
             StructField("transaction_id", StringType(), True),
             StructField("timestamp", TimestampType(), True),
-
-            # Synthetic producer fields
             StructField("user_id", IntegerType(), True),
             StructField("amount", DoubleType(), True),
             StructField("currency", StringType(), True),
             StructField("merchant", StringType(), True),
             StructField("location", StringType(), True),
-
-            # IEEE-CIS fields (optional, for REST API submissions)
+            # IEEE-CIS fields
             StructField("TransactionID", StringType(), True),
             StructField("TransactionDT", DoubleType(), True),
             StructField("TransactionAmt", DoubleType(), True),
             StructField("ProductCD", StringType(), True),
             StructField("card1", IntegerType(), True),
             StructField("card2", IntegerType(), True),
+            StructField("card3", IntegerType(), True),
+            StructField("card4", StringType(), True),
+            StructField("card5", IntegerType(), True),
+            StructField("card6", StringType(), True),
             StructField("addr1", IntegerType(), True),
+            StructField("addr2", IntegerType(), True),
             StructField("P_emaildomain", StringType(), True),
             StructField("R_emaildomain", StringType(), True),
         ])
@@ -232,32 +256,26 @@ class EnhancedFraudDetectionInference:
         return parsed_df
 
     def normalize_features(self, df):
-        """
-        Normalize incoming data to unified internal schema
-
-        Maps both synthetic producer format and IEEE-CIS format to internal schema
-        """
+        """Normalize incoming data to unified internal schema"""
         logger.info("Normalizing features...")
 
-        # Map TransactionID (IEEE-CIS) to transaction_id (internal)
+        # Map TransactionID to transaction_id
         df = df.withColumn(
             "transaction_id",
             coalesce(col("transaction_id"), col("TransactionID"))
         )
 
-        # Map TransactionAmt (IEEE-CIS) to amount (internal)
+        # Map TransactionAmt to amount - KEEP REAL VALUES (NO PLACEHOLDERS)
         df = df.withColumn(
             "amount",
             coalesce(col("amount"), col("TransactionAmt"))
         )
 
         # Map TransactionDT to timestamp if needed
-        # Assume TransactionDT is seconds offset; convert to approximate timestamp
         df = df.withColumn(
             "timestamp",
             coalesce(
                 col("timestamp"),
-                # If TransactionDT exists, convert to timestamp (approximate)
                 when(col("TransactionDT").isNotNull(),
                      lit(datetime(2017, 12, 1).timestamp()) + col("TransactionDT")).cast(TimestampType())
             )
@@ -270,39 +288,59 @@ class EnhancedFraudDetectionInference:
         df = df.withColumn("merchant", coalesce(col("merchant"), lit("unknown")))
         df = df.withColumn("location", coalesce(col("location"), lit("US")))
 
-        # IEEE-CIS specific fields (fill with defaults if missing)
+        # IEEE-CIS specific fields
         df = df.withColumn("card1", coalesce(col("card1"), lit(-1)))
         df = df.withColumn("card2", coalesce(col("card2"), lit(-1)))
+        df = df.withColumn("card3", coalesce(col("card3"), lit(-1)))
+        df = df.withColumn("card4", coalesce(col("card4"), lit("visa")))
+        df = df.withColumn("card5", coalesce(col("card5"), lit(-1)))
+        df = df.withColumn("card6", coalesce(col("card6"), lit("debit")))
         df = df.withColumn("addr1", coalesce(col("addr1"), lit(-1)))
+        df = df.withColumn("addr2", coalesce(col("addr2"), lit(-1)))
         df = df.withColumn("P_emaildomain", coalesce(col("P_emaildomain"), lit(None)))
         df = df.withColumn("R_emaildomain", coalesce(col("R_emaildomain"), lit(None)))
         df = df.withColumn("ProductCD", coalesce(col("ProductCD"), lit("W")))
 
+        # Create TransactionAmt column (maps from amount) - CRITICAL FOR FEATURE ENGINEERING
+        df = df.withColumn("TransactionAmt", col("amount"))
+
         return df
 
     def add_features(self, df):
-        """Add engineered features for model inference"""
-        # Temporal features
-        df = df.withColumn("transaction_hour", hour(col("timestamp")))
-        df = df.withColumn("transaction_day_of_week", dayofweek(col("timestamp")))
-        df = df.withColumn("is_weekend",
-                           when((col("transaction_day_of_week") == 1) | (col("transaction_day_of_week") == 7), 1).otherwise(0))
-        df = df.withColumn("is_night",
-                           when((col("transaction_hour") >= 22) | (col("transaction_hour") <= 6), 1).otherwise(0))
+        """
+        Add engineered features EXACTLY matching training feature names
 
-        # Amount features
-        df = df.withColumn("log_amt", when(col("amount") > 0, lit(1) + col("amount")).otherwise(lit(1)))
-        df = df.withColumn("log_amt", lit(1))  # Placeholder - will be computed in UDF
-        df = df.withColumn("sqrt_amt", lit(1))  # Placeholder
+        CRITICAL: Feature names must match training exactly:
+        - dt_is_weekend (not is_weekend)
+        - dt_is_night (not is_night)
+        - dt_hour (not transaction_hour)
+        - email_risky (not email_is_risky)
+        - log_TransactionAmt (not log_amt)
+        - sqrt_TransactionAmt (not sqrt_amt)
+        """
+        # Temporal features - MATCH TRAINING NAMES EXACTLY
+        df = df.withColumn("dt_hour", hour(col("timestamp")))
+        df = df.withColumn("dt_wday", dayofweek(col("timestamp")))
+        df = df.withColumn("dt_day", dayofmonth(col("timestamp")))
+        df = df.withColumn("dt_is_weekend",
+                           when((col("dt_wday") == 1) | (col("dt_wday") == 7), 1).otherwise(0))
+        df = df.withColumn("dt_is_night",
+                           when((col("dt_hour") >= 22) | (col("dt_hour") <= 6), 1).otherwise(0))
 
-        # Email features
+        # Amount features - MATCH TRAINING NAMES EXACTLY (USE REAL VALUES, NOT PLACEHOLDERS)
+        # Note: We compute these in Spark SQL but also recompute in pandas UDF for consistency
+        df = df.withColumn("log_TransactionAmt", lit(0.0))  # Placeholder, will be computed in UDF
+        df = df.withColumn("sqrt_TransactionAmt", lit(0.0))  # Placeholder, will be computed in UDF
+
+        # Email features - MATCH TRAINING NAMES EXACTLY
         df = df.withColumn("email_match",
                            when((col("P_emaildomain") == col("R_emaildomain")) &
                                 col("P_emaildomain").isNotNull(), 1).otherwise(0))
 
-        risky_domains = ['anonymous.com', 'mailinator.com', 'tempmail.com']
-        df = df.withColumn("email_is_risky",
-                           when(col("P_emaildomain").isin(risky_domains), 1).otherwise(0))
+        # CRITICAL: Use 'email_risky' NOT 'email_is_risky'
+        risky_domains_list = list(RISKY_DOMAINS)
+        df = df.withColumn("email_risky",
+                           when(col("P_emaildomain").isin(risky_domains_list), 1).otherwise(0))
 
         generic_domains = ['gmail.com', 'yahoo.com', 'hotmail.com']
         df = df.withColumn("email_is_generic",
@@ -312,8 +350,6 @@ class EnhancedFraudDetectionInference:
 
     def run_inference(self):
         """Main pipeline execution with enhanced outputs"""
-        import pandas as pd
-
         # Read from Kafka
         df = self.read_from_kafka()
 
@@ -334,71 +370,134 @@ class EnhancedFraudDetectionInference:
         risk_medium = self.risk_bands["medium"]
 
         # Define prediction UDF with probability and risk level
-        @pandas_udf("struct<probability:double,prediction:int,risk_level:string,decision:string>")
+        @pandas_udf("struct<probability:double,prediction:int,risk_level:string,decision:string,risk_factors:string>")
         def predict_with_risk_udf(
             transaction_id: pd.Series,
-            amount: pd.Series,
+            TransactionAmt: pd.Series,
+            log_TransactionAmt: pd.Series,
+            sqrt_TransactionAmt: pd.Series,
             card1: pd.Series,
             card2: pd.Series,
+            card3: pd.Series,
+            card4: pd.Series,
+            card5: pd.Series,
+            card6: pd.Series,
             addr1: pd.Series,
+            addr2: pd.Series,
             P_emaildomain: pd.Series,
             R_emaildomain: pd.Series,
             ProductCD: pd.Series,
-            transaction_hour: pd.Series,
-            is_weekend: pd.Series,
-            is_night: pd.Series,
+            dt_hour: pd.Series,
+            dt_wday: pd.Series,
+            dt_day: pd.Series,
+            dt_is_weekend: pd.Series,
+            dt_is_night: pd.Series,
             email_match: pd.Series,
-            email_is_risky: pd.Series,
+            email_risky: pd.Series,
             email_is_generic: pd.Series
         ) -> pd.DataFrame:
             """
-            Vectorized UDF for fraud prediction with risk levels
+            Vectorized UDF for fraud prediction with FIXED feature engineering
 
-            Returns struct with:
-            - probability: Fraud probability [0, 1]
-            - prediction: Binary prediction (0=legit, 1=fraud)
-            - risk_level: HIGH/MEDIUM/LOW
-            - decision: BLOCK/APPROVE
+            CRITICAL FIXES:
+            1. Feature names match training exactly
+            2. VAE anomaly scores are computed
+            3. Real amount values (not placeholders)
+            4. Proper exception handling that doesn't approve fraudulent transactions
             """
-            # Build input dataframe matching training features
-            input_df = pd.DataFrame({
-                "TransactionAmt": amount,
-                "log_amt": np.log1p(amount),
-                "sqrt_amt": np.sqrt(amount),
-                "card1": card1,
-                "card2": card2,
-                "addr1": addr1,
-                "P_emaildomain": P_emaildomain.fillna("unknown"),
-                "R_emaildomain": R_emaildomain.fillna("unknown"),
-                "transaction_hour": transaction_hour,
-                "transaction_day_of_week": 1,  # Placeholder
-                "is_weekend": is_weekend,
-                "is_night": is_night,
-                "email_match": email_match,
-                "email_is_risky": email_is_risky,
-                "email_is_generic": email_is_generic,
-                "ProductCD": ProductCD.fillna("W")
-            })
+            n = len(TransactionAmt)
 
             try:
-                model = broadcast_model.value
+                model_bundle = broadcast_model.value
                 pipeline = broadcast_pipeline.value
 
-                # Apply feature pipeline if available
-                if pipeline is not None:
+                if model_bundle is None:
+                    logger.error("Model bundle is None")
+                    raise ValueError("Model not loaded")
+
+                # Build base input dataframe with EXACT training feature names
+                input_df = pd.DataFrame({
+                    'TransactionAmt': TransactionAmt.fillna(0).astype('float32'),
+                    'log_TransactionAmt': np.log1p(TransactionAmt.fillna(0)).astype('float32'),
+                    'sqrt_TransactionAmt': np.sqrt(TransactionAmt.fillna(0)).astype('float32'),
+                    'card1': card1.fillna(-1).astype('int32'),
+                    'card2': card2.fillna(-1).astype('int32'),
+                    'card3': card3.fillna(-1).astype('int32'),
+                    'card4': card4.fillna("visa"),
+                    'card5': card5.fillna(-1).astype('int32'),
+                    'card6': card6.fillna("debit"),
+                    'addr1': addr1.fillna(-1).astype('int32'),
+                    'addr2': addr2.fillna(-1).astype('int32'),
+                    'P_emaildomain': P_emaildomain.fillna("unknown"),
+                    'R_emaildomain': R_emaildomain.fillna("unknown"),
+                    'ProductCD': ProductCD.fillna("W"),
+                    'dt_hour': dt_hour.fillna(0).astype('int16'),
+                    'dt_wday': dt_wday.fillna(0).astype('int8'),
+                    'dt_day': dt_day.fillna(1).astype('int32'),
+                    'dt_is_weekend': dt_is_weekend.fillna(0).astype('int8'),
+                    'dt_is_night': dt_is_night.fillna(0).astype('int8'),
+                    'email_match': email_match.fillna(0).astype('int8'),
+                    'email_risky': email_risky.fillna(0).astype('int8'),
+                    'email_is_generic': email_is_generic.fillna(0).astype('int8'),
+                })
+
+                # ✅ CRITICAL: Compute velocity features using velocity service
+                import time
+                current_time = time.time()
+
+                # Add timestamp column for velocity computation
+                input_df['timestamp'] = current_time
+
+                # Compute velocity features (this updates global state)
+                input_df_with_velocity = VELOCITY_SERVICE.process_batch(input_df)
+
+                # Remove temporary timestamp column
+                input_df = input_df_with_velocity.drop(columns=['timestamp'], errors='ignore')
+
+                # Apply frequency encoding using pipeline
+                if pipeline is not None and hasattr(pipeline, 'transform'):
+                    # Get base features for VAE
+                    base_features = input_df.copy()
+
+                    # Apply frequency encoding
                     input_transformed = pipeline.transform(input_df)
+
+                    # Compute VAE anomaly score if VAE models are available
+                    vae_models = model_bundle.get('vae_models', [])
+                    scaler = model_bundle.get('scaler')
+
+                    if vae_models and scaler:
+                        # Scale features for VAE
+                        features_for_vae = base_features.select_dtypes(include=[np.number]).fillna(0)
+                        features_scaled = scaler.transform(features_for_vae)
+
+                        # Compute reconstruction errors
+                        vae_scores = []
+                        for vae in vae_models:
+                            recon_error = vae.get_reconstruction_error(features_scaled)
+                            vae_scores.append(recon_error)
+
+                        # Average ensemble score
+                        vae_anomaly_score = np.mean(vae_scores, axis=0)
+                        input_transformed['vae_anomaly_score'] = vae_anomaly_score
+                    else:
+                        # If no VAE, set to 0
+                        if 'vae_anomaly_score' in pipeline.feature_names:
+                            input_transformed['vae_anomaly_score'] = 0.0
                 else:
                     # Fallback: basic encoding
+                    logger.warning("Pipeline transform not available, using fallback")
                     input_transformed = input_df.copy()
-                    for col in input_transformed.select_dtypes(include=['object']).columns:
-                        input_transformed[col] = input_transformed[col].astype('category').cat.codes
+                    for col_name in input_transformed.select_dtypes(include=['object']).columns:
+                        input_transformed[col_name] = input_transformed[col_name].astype('category').cat.codes
+
+                # Get calibrated model
+                calibrated_model = model_bundle.get('calibrated_model')
+                if calibrated_model is None:
+                    raise ValueError("Calibrated model not found in bundle")
 
                 # Get probabilities
-                if model is not None and hasattr(model, 'predict_proba'):
-                    probabilities = model.predict_proba(input_transformed)[:, 1]
-                else:
-                    # Fallback: simple heuristic (not production-ready)
-                    probabilities = (amount > 1000).astype(float) * 0.3
+                probabilities = calibrated_model.predict_proba(input_transformed)[:, 1]
 
                 # Apply threshold
                 predictions = (probabilities >= threshold).astype(int)
@@ -409,26 +508,72 @@ class EnhancedFraudDetectionInference:
                     np.where(probabilities >= risk_medium, "MEDIUM", "LOW")
                 )
 
-                # Assign decisions
-                decisions = np.where(predictions == 1, "BLOCK", "APPROVE")
+                # Assign decisions with more granularity
+                decisions = np.where(
+                    probabilities >= 0.9, "BLOCK",
+                    np.where(probabilities >= 0.7, "HOLD",
+                             np.where(probabilities >= threshold, "REVIEW", "APPROVE"))
+                )
+
+                # Generate risk factors (including velocity-based factors)
+                risk_factors_list = []
+                for i in range(n):
+                    factors = []
+                    if probabilities[i] >= threshold:
+                        # Email-based risk
+                        if email_risky.iloc[i] == 1:
+                            factors.append("risky_email_domain")
+
+                        # Amount-based risk
+                        if TransactionAmt.iloc[i] > 1000:
+                            factors.append("high_amount")
+                        if TransactionAmt.iloc[i] < 1:
+                            factors.append("very_low_amount")
+
+                        # Time-based risk
+                        if dt_is_night.iloc[i] == 1:
+                            factors.append("night_transaction")
+
+                        # Velocity-based risk (NEW)
+                        if 'velocity_risk_score' in input_df.columns:
+                            velocity_risk = input_df.loc[input_df.index[i], 'velocity_risk_score']
+                            if velocity_risk > 0.7:
+                                factors.append("high_velocity_risk")
+                            if 'txn_count_1h' in input_df.columns and input_df.loc[input_df.index[i], 'txn_count_1h'] > 5:
+                                factors.append("rapid_transactions")
+                            if 'amt_spike_1h' in input_df.columns and input_df.loc[input_df.index[i], 'amt_spike_1h'] > 0.8:
+                                factors.append("amount_spike")
+
+                        # VAE-based risk
+                        if 'vae_anomaly_score' in input_transformed.columns:
+                            vae_score = input_transformed.loc[input_transformed.index[i], 'vae_anomaly_score']
+                            if vae_score > input_transformed['vae_anomaly_score'].quantile(0.95):
+                                factors.append("anomalous_pattern")
+
+                    risk_factors_list.append(",".join(factors) if factors else "none")
 
                 # Return as DataFrame with struct schema
                 return pd.DataFrame({
                     "probability": probabilities,
                     "prediction": predictions,
                     "risk_level": risk_levels,
-                    "decision": decisions
+                    "decision": decisions,
+                    "risk_factors": risk_factors_list
                 })
 
             except Exception as e:
                 logger.error(f"Prediction error: {str(e)}")
-                # Return safe defaults
-                n = len(amount)
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+
+                # CRITICAL: Don't approve suspicious transactions on error
+                # Instead, flag them for manual review
                 return pd.DataFrame({
-                    "probability": [0.0] * n,
+                    "probability": [0.5] * n,  # Neutral probability
                     "prediction": [0] * n,
-                    "risk_level": ["LOW"] * n,
-                    "decision": ["APPROVE"] * n
+                    "risk_level": ["MEDIUM"] * n,  # Medium risk for safety
+                    "decision": ["REVIEW"] * n,  # Manual review required
+                    "risk_factors": ["processing_error"] * n
                 })
 
         # Apply predictions
@@ -436,18 +581,27 @@ class EnhancedFraudDetectionInference:
             "prediction_result",
             predict_with_risk_udf(
                 col("transaction_id"),
-                col("amount"),
+                col("TransactionAmt"),
+                col("log_TransactionAmt"),
+                col("sqrt_TransactionAmt"),
                 col("card1"),
                 col("card2"),
+                col("card3"),
+                col("card4"),
+                col("card5"),
+                col("card6"),
                 col("addr1"),
+                col("addr2"),
                 col("P_emaildomain"),
                 col("R_emaildomain"),
                 col("ProductCD"),
-                col("transaction_hour"),
-                col("is_weekend"),
-                col("is_night"),
+                col("dt_hour"),
+                col("dt_wday"),
+                col("dt_day"),
+                col("dt_is_weekend"),
+                col("dt_is_night"),
                 col("email_match"),
-                col("email_is_risky"),
+                col("email_risky"),
                 col("email_is_generic")
             )
         )
@@ -457,6 +611,7 @@ class EnhancedFraudDetectionInference:
         prediction_df = prediction_df.withColumn("prediction", col("prediction_result.prediction"))
         prediction_df = prediction_df.withColumn("risk_level", col("prediction_result.risk_level"))
         prediction_df = prediction_df.withColumn("decision", col("prediction_result.decision"))
+        prediction_df = prediction_df.withColumn("risk_factors", col("prediction_result.risk_factors"))
 
         # Prepare output payload
         output_df = prediction_df.select(
@@ -464,6 +619,7 @@ class EnhancedFraudDetectionInference:
             col("probability"),
             col("risk_level"),
             col("decision"),
+            col("risk_factors"),
             col("timestamp"),
             col("amount"),
             col("user_id"),
@@ -472,8 +628,8 @@ class EnhancedFraudDetectionInference:
         )
 
         # Split into fraud and legit streams
-        fraud_df = output_df.filter(col("prediction") == 1)
-        legit_df = output_df.filter(col("prediction") == 0)
+        fraud_df = output_df.filter((col("prediction") == 1) | (col("decision") == "REVIEW"))
+        legit_df = output_df.filter((col("prediction") == 0) & (col("decision") == "APPROVE"))
 
         # Kafka configuration
         kafka_cfg = self.kafka_config_dict
