@@ -34,6 +34,11 @@ from sklearn.metrics import (
     confusion_matrix
 )
 
+# Import feature pipeline
+import sys
+sys.path.append(os.path.dirname(__file__))
+from feature_pipeline import IEEECISFeaturePipeline
+
 # Boosting models
 try:
     from xgboost import XGBClassifier
@@ -277,6 +282,7 @@ class IEEECISFraudTraining:
         self.vae_models = []
         self.scaler = None
         self.freq_maps = {}
+        self.feature_pipeline = IEEECISFeaturePipeline()
         self.adaptive_threshold_system = None
         self.best_threshold = 0.5
         self.all_features = []
@@ -644,9 +650,10 @@ class IEEECISFraudTraining:
             vae = VAE(input_dim=X_train_scaled.shape[1], latent_dim=16)
             vae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001))
 
+            # Use 'loss' instead of 'total_loss' for Keras 3.x compatibility
             callbacks = [
-                EarlyStopping(monitor='total_loss', mode='min', patience=10, restore_best_weights=True),
-                ReduceLROnPlateau(monitor='total_loss', mode='min', factor=0.5, patience=5, min_lr=1e-6)
+                EarlyStopping(monitor='loss', mode='min', patience=10, restore_best_weights=True, verbose=0),
+                ReduceLROnPlateau(monitor='loss', mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=0)
             ]
 
             history = vae.fit(
@@ -660,7 +667,8 @@ class IEEECISFraudTraining:
             self.vae_models.append(vae)
             vae_histories.append(history)
 
-            final_loss = history.history['total_loss'][-1]
+            # Get final loss (use 'loss' for Keras 3.x compatibility)
+            final_loss = history.history.get('loss', history.history.get('total_loss', [0]))[-1]
             logger.info(f"    Final loss: {final_loss:.4f}")
 
         logger.info("  VAE ensemble training complete")
@@ -986,15 +994,15 @@ class IEEECISFraudTraining:
         joblib.dump(artifact_bundle, model_path)
         logger.info(f"  Model bundle saved to: {model_path}")
 
+        # Update the feature pipeline and save it as a proper object with transform() method
+        self.feature_pipeline.freq_maps = self.freq_maps
+        self.feature_pipeline.scaler = self.scaler
+        self.feature_pipeline.feature_names = self.all_features
+
         # Save feature pipeline separately for inference compatibility
         pipeline_path = self.config["training"]["feature_pipeline_path"]
-        pipeline_artifact = {
-            'freq_maps': self.freq_maps,
-            'scaler': self.scaler,
-            'feature_names': self.all_features
-        }
-        joblib.dump(pipeline_artifact, pipeline_path)
-        logger.info(f"  Feature pipeline saved to: {pipeline_path}")
+        joblib.dump(self.feature_pipeline, pipeline_path)
+        logger.info(f"  Feature pipeline (with transform() method) saved to: {pipeline_path}")
 
     def log_to_mlflow(
         self,

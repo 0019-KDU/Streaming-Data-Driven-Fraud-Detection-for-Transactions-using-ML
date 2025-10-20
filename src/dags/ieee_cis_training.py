@@ -650,9 +650,10 @@ class IEEECISFraudTraining:
             vae = VAE(input_dim=X_train_scaled.shape[1], latent_dim=16)
             vae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001))
 
+            # Use 'loss' instead of 'total_loss' for Keras 3.x compatibility
             callbacks = [
-                EarlyStopping(monitor='total_loss', mode='min', patience=10, restore_best_weights=True),
-                ReduceLROnPlateau(monitor='total_loss', mode='min', factor=0.5, patience=5, min_lr=1e-6)
+                EarlyStopping(monitor='loss', mode='min', patience=10, restore_best_weights=True, verbose=0),
+                ReduceLROnPlateau(monitor='loss', mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=0)
             ]
 
             history = vae.fit(
@@ -666,7 +667,8 @@ class IEEECISFraudTraining:
             self.vae_models.append(vae)
             vae_histories.append(history)
 
-            final_loss = history.history['total_loss'][-1]
+            # Get final loss (use 'loss' for Keras 3.x compatibility)
+            final_loss = history.history.get('loss', history.history.get('total_loss', [0]))[-1]
             logger.info(f"    Final loss: {final_loss:.4f}")
 
         logger.info("  VAE ensemble training complete")
