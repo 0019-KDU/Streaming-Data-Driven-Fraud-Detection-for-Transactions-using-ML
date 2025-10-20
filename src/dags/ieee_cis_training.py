@@ -34,6 +34,11 @@ from sklearn.metrics import (
     confusion_matrix
 )
 
+# Import feature pipeline
+import sys
+sys.path.append(os.path.dirname(__file__))
+from feature_pipeline import IEEECISFeaturePipeline
+
 # Boosting models
 try:
     from xgboost import XGBClassifier
@@ -277,6 +282,7 @@ class IEEECISFraudTraining:
         self.vae_models = []
         self.scaler = None
         self.freq_maps = {}
+        self.feature_pipeline = IEEECISFeaturePipeline()
         self.adaptive_threshold_system = None
         self.best_threshold = 0.5
         self.all_features = []
@@ -986,15 +992,15 @@ class IEEECISFraudTraining:
         joblib.dump(artifact_bundle, model_path)
         logger.info(f"  Model bundle saved to: {model_path}")
 
+        # Update the feature pipeline and save it as a proper object with transform() method
+        self.feature_pipeline.freq_maps = self.freq_maps
+        self.feature_pipeline.scaler = self.scaler
+        self.feature_pipeline.feature_names = self.all_features
+
         # Save feature pipeline separately for inference compatibility
         pipeline_path = self.config["training"]["feature_pipeline_path"]
-        pipeline_artifact = {
-            'freq_maps': self.freq_maps,
-            'scaler': self.scaler,
-            'feature_names': self.all_features
-        }
-        joblib.dump(pipeline_artifact, pipeline_path)
-        logger.info(f"  Feature pipeline saved to: {pipeline_path}")
+        joblib.dump(self.feature_pipeline, pipeline_path)
+        logger.info(f"  Feature pipeline (with transform() method) saved to: {pipeline_path}")
 
     def log_to_mlflow(
         self,
