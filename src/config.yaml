@@ -29,6 +29,7 @@ training:
   model_path: "/app/models/fraud_detection_model.pkl"
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
   experiment_name: "ieee_cis_fraud_detection"
+  force_cpu_only: true  # Skip GPU attempts, use CPU directly (for VMs without GPU)
 
 model:
   test_size: 0.2

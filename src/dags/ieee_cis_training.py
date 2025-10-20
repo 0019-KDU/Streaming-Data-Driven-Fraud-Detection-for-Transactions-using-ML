@@ -699,30 +699,54 @@ class IEEECISFraudTraining:
         scale_pos_weight = float(neg) / float(pos)
         logger.info(f"  Class imbalance ratio: {scale_pos_weight:.2f}")
 
+        # Check if CPU-only mode is enabled
+        force_cpu = self.config.get("training", {}).get("force_cpu_only", False)
+        if force_cpu:
+            logger.info("  CPU-only mode enabled (skipping GPU attempts)")
+
         models_to_try = []
 
         # XGBoost with GPU support
         if XGBClassifier is not None:
-            try:
-                logger.info("  Attempting XGBoost with GPU...")
-                xgb_model = XGBClassifier(
-                    n_estimators=2000,
-                    max_depth=6,
-                    learning_rate=0.03,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_alpha=0.1,
-                    reg_lambda=1.5,
-                    gamma=0.1,
-                    scale_pos_weight=scale_pos_weight,
-                    eval_metric="aucpr",
-                    tree_method="hist",
-                    device="cuda",
-                    random_state=RNG
-                )
-                models_to_try.append(('XGBoost-GPU', xgb_model))
-            except:
-                logger.info("  XGBoost GPU failed, using CPU...")
+            if not force_cpu:
+                try:
+                    logger.info("  Attempting XGBoost with GPU...")
+                    xgb_model = XGBClassifier(
+                        n_estimators=2000,
+                        max_depth=6,
+                        learning_rate=0.03,
+                        subsample=0.85,
+                        colsample_bytree=0.85,
+                        reg_alpha=0.1,
+                        reg_lambda=1.5,
+                        gamma=0.1,
+                        scale_pos_weight=scale_pos_weight,
+                        eval_metric="aucpr",
+                        tree_method="hist",
+                        device="cuda",
+                        random_state=RNG
+                    )
+                    models_to_try.append(('XGBoost-GPU', xgb_model))
+                except:
+                    logger.info("  XGBoost GPU failed, using CPU...")
+                    xgb_model = XGBClassifier(
+                        n_estimators=2000,
+                        max_depth=6,
+                        learning_rate=0.03,
+                        subsample=0.85,
+                        colsample_bytree=0.85,
+                        reg_alpha=0.1,
+                        reg_lambda=1.5,
+                        gamma=0.1,
+                        scale_pos_weight=scale_pos_weight,
+                        eval_metric="aucpr",
+                        tree_method="hist",
+                        random_state=RNG,
+                        n_jobs=-1
+                    )
+                    models_to_try.append(('XGBoost', xgb_model))
+            else:
+                logger.info("  Using XGBoost with CPU...")
                 xgb_model = XGBClassifier(
                     n_estimators=2000,
                     max_depth=6,
