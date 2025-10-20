@@ -498,42 +498,80 @@ class EnhancedFraudDetectionInference:
                 # Get probabilities
                 probabilities = calibrated_model.predict_proba(input_transformed)[:, 1]
 
-                # Apply threshold
-                predictions = (probabilities >= threshold).astype(int)
+                # RULE-BASED OVERRIDES: Flag obvious fraud patterns even if model probability is low
+                # This addresses model threshold being too conservative
+                rule_based_flags = np.zeros(n, dtype=bool)
 
-                # Assign risk levels
-                risk_levels = np.where(
-                    probabilities >= risk_high, "HIGH",
-                    np.where(probabilities >= risk_medium, "MEDIUM", "LOW")
+                for i in range(n):
+                    # Flag 1: Risky email domains (anonymous.com, mailinator.com, etc.)
+                    if email_risky.iloc[i] == 1:
+                        rule_based_flags[i] = True
+
+                    # Flag 2: Very low amount (<$1) transactions
+                    if TransactionAmt.iloc[i] < 1.0:
+                        rule_based_flags[i] = True
+
+                    # Flag 3: Very high amount (>$10k) transactions
+                    if TransactionAmt.iloc[i] > 10000:
+                        rule_based_flags[i] = True
+
+                    # Flag 4: High velocity risk from velocity service
+                    if 'velocity_risk_score' in input_df.columns:
+                        velocity_risk = input_df.loc[input_df.index[i], 'velocity_risk_score']
+                        if velocity_risk > 0.7:
+                            rule_based_flags[i] = True
+
+                # Boost probabilities for rule-based flags (ensure they get flagged)
+                adjusted_probabilities = probabilities.copy()
+                adjusted_probabilities[rule_based_flags] = np.maximum(
+                    adjusted_probabilities[rule_based_flags],
+                    0.15  # Minimum probability for rule-based flags (above typical thresholds)
                 )
+
+                # Apply threshold (using adjusted probabilities)
+                predictions = (adjusted_probabilities >= threshold).astype(int)
+
+                # Also flag as fraud if rule-based criteria are met, regardless of threshold
+                predictions[rule_based_flags] = 1
+
+                # Assign risk levels (use original probabilities for display, but flag high risk)
+                risk_levels = np.where(
+                    adjusted_probabilities >= risk_high, "HIGH",
+                    np.where(adjusted_probabilities >= risk_medium, "MEDIUM", "LOW")
+                )
+                # Ensure rule-based flags get at least MEDIUM risk
+                risk_levels[rule_based_flags & (risk_levels == "LOW")] = "MEDIUM"
 
                 # Assign decisions with more granularity
                 decisions = np.where(
-                    probabilities >= 0.9, "BLOCK",
-                    np.where(probabilities >= 0.7, "HOLD",
-                             np.where(probabilities >= threshold, "REVIEW", "APPROVE"))
+                    adjusted_probabilities >= 0.9, "BLOCK",
+                    np.where(adjusted_probabilities >= 0.7, "HOLD",
+                             np.where(predictions == 1, "REVIEW", "APPROVE"))
                 )
 
-                # Generate risk factors (including velocity-based factors)
+                # Generate risk factors (including velocity-based and rule-based factors)
                 risk_factors_list = []
                 for i in range(n):
                     factors = []
-                    if probabilities[i] >= threshold:
+                    # Collect risk factors for any flagged transaction (model-based OR rule-based)
+                    if predictions[i] == 1 or probabilities[i] >= threshold or rule_based_flags[i]:
                         # Email-based risk
                         if email_risky.iloc[i] == 1:
                             factors.append("risky_email_domain")
 
                         # Amount-based risk
-                        if TransactionAmt.iloc[i] > 1000:
+                        if TransactionAmt.iloc[i] > 10000:
+                            factors.append("very_high_amount")
+                        elif TransactionAmt.iloc[i] > 1000:
                             factors.append("high_amount")
-                        if TransactionAmt.iloc[i] < 1:
+                        if TransactionAmt.iloc[i] < 1.0:
                             factors.append("very_low_amount")
 
                         # Time-based risk
                         if dt_is_night.iloc[i] == 1:
                             factors.append("night_transaction")
 
-                        # Velocity-based risk (NEW)
+                        # Velocity-based risk
                         if 'velocity_risk_score' in input_df.columns:
                             velocity_risk = input_df.loc[input_df.index[i], 'velocity_risk_score']
                             if velocity_risk > 0.7:
@@ -548,6 +586,10 @@ class EnhancedFraudDetectionInference:
                             vae_score = input_transformed.loc[input_transformed.index[i], 'vae_anomaly_score']
                             if vae_score > input_transformed['vae_anomaly_score'].quantile(0.95):
                                 factors.append("anomalous_pattern")
+
+                        # Rule-based flag indicator
+                        if rule_based_flags[i]:
+                            factors.append("rule_based_flag")
 
                     risk_factors_list.append(",".join(factors) if factors else "none")
 
