@@ -645,8 +645,8 @@ class IEEECISFraudTraining:
             vae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001))
 
             callbacks = [
-                EarlyStopping(monitor='total_loss', patience=10, restore_best_weights=True),
-                ReduceLROnPlateau(monitor='total_loss', factor=0.5, patience=5, min_lr=1e-6)
+                EarlyStopping(monitor='total_loss', mode='min', patience=10, restore_best_weights=True),
+                ReduceLROnPlateau(monitor='total_loss', mode='min', factor=0.5, patience=5, min_lr=1e-6)
             ]
 
             history = vae.fit(
