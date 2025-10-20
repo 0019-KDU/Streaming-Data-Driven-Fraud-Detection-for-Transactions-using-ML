@@ -56,6 +56,8 @@ RUN pip install -r requirements.txt
 # Copy application files
 COPY main_enhanced.py main.py
 COPY ieee_cis_training.py ieee_cis_training.py
+COPY velocity_service.py velocity_service.py
+COPY feature_pipeline.py feature_pipeline.py
 
 # Stage 2: Runtime stage
 FROM python:3.12-slim-bookworm as runtime
@@ -80,6 +82,8 @@ COPY --from=builder /spark /spark
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/main.py main.py
 COPY --from=builder /app/ieee_cis_training.py ieee_cis_training.py
+COPY --from=builder /app/velocity_service.py velocity_service.py
+COPY --from=builder /app/feature_pipeline.py feature_pipeline.py
 
 # Environment configuration
 ENV SPARK_HOME=/spark \
