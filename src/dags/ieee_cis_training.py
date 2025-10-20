@@ -147,19 +147,32 @@ if TF_AVAILABLE:
                 z_mean, z_log_var, z = self.encoder(data)
                 reconstruction = self.decoder(z)
 
-                # Reconstruction loss
+                # Reconstruction loss (MSE with numerical stability)
                 reconstruction_loss = tf.reduce_mean(
                     tf.reduce_sum(tf.square(data - reconstruction), axis=1)
                 )
 
-                # KL divergence
+                # KL divergence (with numerical stability - clip z_log_var)
+                z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 2.0)
                 kl_loss = -0.5 * tf.reduce_mean(
-                    tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1)
+                    tf.reduce_sum(
+                        1 + z_log_var_clipped - tf.square(z_mean) - tf.exp(z_log_var_clipped),
+                        axis=1
+                    )
                 )
 
-                total_loss = reconstruction_loss + kl_loss
+                # Total loss with KL weighting (β-VAE approach for stability)
+                beta = 0.1  # Lower beta = less KL penalty = more stable
+                total_loss = reconstruction_loss + beta * kl_loss
+
+                # Check for NaN
+                total_loss = tf.where(tf.math.is_nan(total_loss), tf.constant(1e10, dtype=tf.float32), total_loss)
 
             grads = tape.gradient(total_loss, self.trainable_weights)
+
+            # Clip gradients to prevent explosion
+            grads = [tf.clip_by_norm(g, 5.0) if g is not None else None for g in grads]
+
             self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
             self.total_loss_tracker.update_state(total_loss)
