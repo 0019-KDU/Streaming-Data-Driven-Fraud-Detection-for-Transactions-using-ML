@@ -766,28 +766,47 @@ class IEEECISFraudTraining:
 
         # LightGBM with GPU support
         if LGBMClassifier is not None:
-            try:
-                logger.info("  Attempting LightGBM with GPU...")
-                lgbm_model = LGBMClassifier(
-                    n_estimators=5000,
-                    num_leaves=63,
-                    learning_rate=0.03,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_alpha=0.1,
-                    reg_lambda=1.5,
-                    min_child_samples=50,
-                    objective="binary",
-                    device="gpu",
-                    gpu_platform_id=0,
-                    gpu_device_id=0,
-                    random_state=RNG,
-                    scale_pos_weight=scale_pos_weight,
-                    verbose=-1
-                )
-                models_to_try.append(('LightGBM-GPU', lgbm_model))
-            except:
-                logger.info("  LightGBM GPU failed, using CPU...")
+            if not force_cpu:
+                try:
+                    logger.info("  Attempting LightGBM with GPU...")
+                    lgbm_model = LGBMClassifier(
+                        n_estimators=5000,
+                        num_leaves=63,
+                        learning_rate=0.03,
+                        subsample=0.85,
+                        colsample_bytree=0.85,
+                        reg_alpha=0.1,
+                        reg_lambda=1.5,
+                        min_child_samples=50,
+                        objective="binary",
+                        device="gpu",
+                        gpu_platform_id=0,
+                        gpu_device_id=0,
+                        random_state=RNG,
+                        scale_pos_weight=scale_pos_weight,
+                        verbose=-1
+                    )
+                    models_to_try.append(('LightGBM-GPU', lgbm_model))
+                except:
+                    logger.info("  LightGBM GPU failed, using CPU...")
+                    lgbm_model = LGBMClassifier(
+                        n_estimators=5000,
+                        num_leaves=63,
+                        learning_rate=0.03,
+                        subsample=0.85,
+                        colsample_bytree=0.85,
+                        reg_alpha=0.1,
+                        reg_lambda=1.5,
+                        min_child_samples=50,
+                        objective="binary",
+                        random_state=RNG,
+                        n_jobs=-1,
+                        scale_pos_weight=scale_pos_weight,
+                        verbose=-1
+                    )
+                    models_to_try.append(('LightGBM', lgbm_model))
+            else:
+                logger.info("  Using LightGBM with CPU...")
                 lgbm_model = LGBMClassifier(
                     n_estimators=5000,
                     num_leaves=63,
@@ -807,23 +826,37 @@ class IEEECISFraudTraining:
 
         # CatBoost with GPU support
         if CatBoostClassifier is not None:
-            try:
-                logger.info("  Attempting CatBoost with GPU...")
-                cat_model = CatBoostClassifier(
-                    iterations=3000,
-                    depth=6,
-                    learning_rate=0.03,
-                    l2_leaf_reg=3.0,
-                    random_state=RNG,
-                    class_weights=[1.0, scale_pos_weight],
-                    loss_function="Logloss",
-                    task_type="GPU",
-                    devices="0",
-                    verbose=False
-                )
-                models_to_try.append(('CatBoost-GPU', cat_model))
-            except:
-                logger.info("  CatBoost GPU failed, using CPU...")
+            if not force_cpu:
+                try:
+                    logger.info("  Attempting CatBoost with GPU...")
+                    cat_model = CatBoostClassifier(
+                        iterations=3000,
+                        depth=6,
+                        learning_rate=0.03,
+                        l2_leaf_reg=3.0,
+                        random_state=RNG,
+                        class_weights=[1.0, scale_pos_weight],
+                        loss_function="Logloss",
+                        task_type="GPU",
+                        devices="0",
+                        verbose=False
+                    )
+                    models_to_try.append(('CatBoost-GPU', cat_model))
+                except:
+                    logger.info("  CatBoost GPU failed, using CPU...")
+                    cat_model = CatBoostClassifier(
+                        iterations=3000,
+                        depth=6,
+                        learning_rate=0.03,
+                        l2_leaf_reg=3.0,
+                        random_state=RNG,
+                        class_weights=[1.0, scale_pos_weight],
+                        loss_function="Logloss",
+                        verbose=False
+                    )
+                    models_to_try.append(('CatBoost', cat_model))
+            else:
+                logger.info("  Using CatBoost with CPU...")
                 cat_model = CatBoostClassifier(
                     iterations=3000,
                     depth=6,
@@ -1072,8 +1105,12 @@ class IEEECISFraudTraining:
         # Save artifacts
         self.save_artifacts(calibrated_model)
 
-        # Log to MLflow
-        self.log_to_mlflow(calibrated_model, y_valid, y_valid_proba, self.best_threshold)
+        # Log to MLflow (optional - don't fail if MLflow unavailable)
+        try:
+            self.log_to_mlflow(calibrated_model, y_valid, y_valid_proba, self.best_threshold)
+        except Exception as e:
+            logger.warning(f"  MLflow logging failed (non-critical): {str(e)}")
+            logger.warning("  Continuing with training... Model artifacts already saved.")
 
         # Calculate final metrics
         y_valid_pred = (y_valid_proba >= self.best_threshold).astype(int)
