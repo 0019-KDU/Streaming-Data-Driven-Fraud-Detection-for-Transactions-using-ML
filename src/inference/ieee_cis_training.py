@@ -87,7 +87,6 @@ if TF_AVAILABLE:
             epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
             return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
-    @keras.saving.register_keras_serializable(package="ieee_cis_training")
     class VAE(Model):
         """Variational Autoencoder for anomaly detection"""
         def __init__(self, input_dim, latent_dim=16, **kwargs):
@@ -184,18 +183,6 @@ if TF_AVAILABLE:
                 tf.square(X - reconstruction), axis=1
             )
             return reconstruction_error.numpy()
-
-        def get_config(self):
-            """Get VAE configuration for serialization"""
-            return {
-                "input_dim": self.input_dim,
-                "latent_dim": self.latent_dim
-            }
-
-        @classmethod
-        def from_config(cls, config):
-            """Create VAE from configuration"""
-            return cls(**config)
 
 
 # ==================== ADAPTIVE THRESHOLD SYSTEM ====================
