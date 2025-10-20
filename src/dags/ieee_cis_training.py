@@ -762,12 +762,21 @@ class IEEECISFraudTraining:
         logger.info(f"    Legit: {(y_train == 0).sum():,} ({(y_train == 0).mean():.2%})")
 
         # Create SMOTE sampler
-        smote = SMOTE(
-            sampling_strategy=sampling_strategy,
-            k_neighbors=k_neighbors,
-            random_state=RNG,
-            n_jobs=-1
-        )
+        # Note: n_jobs parameter only available in imbalanced-learn >= 0.12.0
+        try:
+            smote = SMOTE(
+                sampling_strategy=sampling_strategy,
+                k_neighbors=k_neighbors,
+                random_state=RNG,
+                n_jobs=-1
+            )
+        except TypeError:
+            # Fallback for older versions without n_jobs support
+            smote = SMOTE(
+                sampling_strategy=sampling_strategy,
+                k_neighbors=k_neighbors,
+                random_state=RNG
+            )
 
         # Apply SMOTE
         try:
