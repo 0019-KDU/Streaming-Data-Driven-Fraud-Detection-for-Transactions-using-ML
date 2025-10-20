@@ -32,7 +32,7 @@ from pyspark.sql.types import (
 )
 
 # Import velocity service
-from velocity_service import get_velocity_service
+from velocity_service import VelocityFeatureService
 
 # Configure logging
 logging.basicConfig(
@@ -46,10 +46,6 @@ RISKY_DOMAINS = {
     'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
     'yopmail.com', '10minutemail.com', 'guerrillamail.com'
 }
-
-# Initialize global velocity service
-VELOCITY_SERVICE = get_velocity_service()
-logger.info("✓ Velocity service initialized")
 
 
 class EnhancedFraudDetectionInference:
@@ -443,13 +439,16 @@ class EnhancedFraudDetectionInference:
 
                 # ✅ CRITICAL: Compute velocity features using velocity service
                 import time
+                from velocity_service import VelocityFeatureService
+
                 current_time = time.time()
 
                 # Add timestamp column for velocity computation
                 input_df['timestamp'] = current_time
 
-                # Compute velocity features (this updates global state)
-                input_df_with_velocity = VELOCITY_SERVICE.process_batch(input_df)
+                # Create velocity service instance (each Spark worker gets its own)
+                velocity_service = VelocityFeatureService()
+                input_df_with_velocity = velocity_service.process_batch(input_df)
 
                 # Remove temporary timestamp column
                 input_df = input_df_with_velocity.drop(columns=['timestamp'], errors='ignore')

@@ -28,6 +28,9 @@ class VelocityFeatureService:
     - Amount statistics (sum, mean, std, max)
     - Risk scores (frequency risk, amount risk, spike risk)
     - Combined velocity risk score
+
+    Note: This is NOT thread-safe for Spark broadcasting.
+    Each worker will have its own instance.
     """
 
     def __init__(self, max_history_seconds: int = 7 * 24 * 3600):
@@ -41,9 +44,6 @@ class VelocityFeatureService:
 
         # Storage: uid -> [(timestamp, amount), ...]
         self.user_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=10000))
-
-        # Lock for thread safety
-        self.lock = threading.Lock()
 
         # Time windows in seconds
         self.windows = {
@@ -78,13 +78,13 @@ class VelocityFeatureService:
             timestamp: Transaction timestamp (unix seconds)
             amount: Transaction amount
         """
-        with self.lock:
-            self.user_history[uid].append((timestamp, amount))
+        # No lock needed - each Spark worker has its own instance
+        self.user_history[uid].append((timestamp, amount))
 
-            # Clean old transactions (beyond max_history_seconds)
-            cutoff = timestamp - self.max_history_seconds
-            while self.user_history[uid] and self.user_history[uid][0][0] < cutoff:
-                self.user_history[uid].popleft()
+        # Clean old transactions (beyond max_history_seconds)
+        cutoff = timestamp - self.max_history_seconds
+        while self.user_history[uid] and self.user_history[uid][0][0] < cutoff:
+            self.user_history[uid].popleft()
 
     def compute_velocity_features(
         self,
@@ -105,8 +105,8 @@ class VelocityFeatureService:
         """
         features = {}
 
-        with self.lock:
-            history = list(self.user_history.get(uid, []))
+        # No lock needed - each Spark worker has its own instance
+        history = list(self.user_history.get(uid, []))
 
         # For each time window, compute features
         for window_name, window_seconds in self.windows.items():
@@ -208,9 +208,8 @@ class VelocityFeatureService:
 
     def get_stats(self) -> Dict:
         """Get service statistics"""
-        with self.lock:
-            total_users = len(self.user_history)
-            total_transactions = sum(len(hist) for hist in self.user_history.values())
+        total_users = len(self.user_history)
+        total_transactions = sum(len(hist) for hist in self.user_history.values())
 
         return {
             'total_users': total_users,
@@ -220,8 +219,7 @@ class VelocityFeatureService:
 
     def clear_history(self):
         """Clear all history (for testing)"""
-        with self.lock:
-            self.user_history.clear()
+        self.user_history.clear()
 
 
 # Global singleton instance
