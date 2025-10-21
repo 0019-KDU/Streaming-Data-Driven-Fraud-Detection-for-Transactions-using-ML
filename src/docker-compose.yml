@@ -350,7 +350,6 @@ services:
     build: ./inference
     container_name: fraud-inference
     env_file: .env
-    command: python main_enhanced.py
     restart: always
     depends_on:
       - redis
