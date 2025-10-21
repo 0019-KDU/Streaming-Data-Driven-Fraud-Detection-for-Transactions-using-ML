@@ -649,14 +649,15 @@ class IEEECISFraudTraining:
             else:
                 logger.info("  Using XGBoost with CPU...")
                 xgb_model = XGBClassifier(
-                    n_estimators=2000,
-                    max_depth=6,
-                    learning_rate=0.03,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_alpha=0.1,
-                    reg_lambda=1.5,
-                    gamma=0.1,
+                    n_estimators=3000,
+                    max_depth=8,
+                    learning_rate=0.02,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.3,
+                    reg_lambda=2.0,
+                    gamma=0.2,
+                    min_child_weight=5,
                     scale_pos_weight=scale_pos_weight,
                     eval_metric="aucpr",
                     tree_method="hist",
@@ -709,14 +710,16 @@ class IEEECISFraudTraining:
             else:
                 logger.info("  Using LightGBM with CPU...")
                 lgbm_model = LGBMClassifier(
-                    n_estimators=5000,
-                    num_leaves=63,
-                    learning_rate=0.03,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_alpha=0.1,
-                    reg_lambda=1.5,
-                    min_child_samples=50,
+                    n_estimators=6000,
+                    num_leaves=95,
+                    learning_rate=0.02,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.3,
+                    reg_lambda=2.0,
+                    min_child_samples=30,
+                    min_child_weight=5,
+                    max_bin=511,
                     objective="binary",
                     random_state=RNG,
                     n_jobs=-1,
@@ -761,10 +764,11 @@ class IEEECISFraudTraining:
             else:
                 logger.info("  Using CatBoost with CPU...")
                 cat_model = CatBoostClassifier(
-                    iterations=4000,
-                    depth=10,
-                    learning_rate=0.04,
-                    l2_leaf_reg=2.0,
+                    iterations=5000,
+                    depth=8,
+                    learning_rate=0.03,
+                    l2_leaf_reg=3.0,
+                    border_count=254,
                     grow_policy='SymmetricTree',
                     random_state=RNG,
                     class_weights=[1.0, scale_pos_weight],
@@ -1000,9 +1004,10 @@ class IEEECISFraudTraining:
         # Apply SMOTE for class imbalance (OPTIONAL - can be disabled in config)
         use_smote = self.config.get("training", {}).get("use_smote", True)
         if use_smote and SMOTE_AVAILABLE:
-            # Use conservative sampling strategy (0.3 means 30% of majority class)
-            # Full balance (1.0) creates too many synthetic samples
-            sampling_strategy = self.config.get("training", {}).get("smote_sampling_strategy", 0.3)
+            # Use more aggressive sampling strategy to improve fraud detection
+            # 0.5 means fraud class will be 50% of majority class size
+            # This creates a better balance for learning fraud patterns
+            sampling_strategy = self.config.get("training", {}).get("smote_sampling_strategy", 0.5)
             X_train, y_train = self.apply_smote(X_train, y_train, sampling_strategy=sampling_strategy)
 
         # Train gradient boosting
@@ -1041,7 +1046,6 @@ class IEEECISFraudTraining:
             "f1_score": f1_score(y_valid, y_valid_pred),
             "threshold": self.best_threshold,
             "n_features": len(self.all_features),
-            "n_vae_models": len(self.vae_models),
             "train_samples": len(y_train),
             "valid_samples": len(y_valid)
         }
@@ -1054,7 +1058,6 @@ class IEEECISFraudTraining:
         logger.info(f"  Recall: {metrics['recall']:.4f}")
         logger.info(f"  F1-Score: {metrics['f1_score']:.4f}")
         logger.info(f"  Total Features: {metrics['n_features']}")
-        logger.info(f"  VAE Models: {metrics['n_vae_models']}")
         logger.info("="*80)
 
         # Cleanup
