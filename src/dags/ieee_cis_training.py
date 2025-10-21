@@ -566,7 +566,7 @@ class IEEECISFraudTraining:
 
     def select_all_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
         """
-        Select comprehensive feature set (60+ features)
+        Select comprehensive feature set (80+ features with new enhancements)
         """
         # Base features
         base_features = [
@@ -575,6 +575,11 @@ class IEEECISFraudTraining:
             'email_match', 'email_risky', 'email_is_generic'
         ]
 
+        # Amount aggregation features (NEW)
+        amount_agg_features = [c for c in df.columns if any(x in c for x in
+            ['TransactionAmt_decimal', 'TransactionAmt_to_mean', 'TransactionAmt_to_std',
+             'D15_to_mean', 'D15_to_std'])]
+
         # Velocity features
         velocity_features = [c for c in df.columns if any(x in c for x in
             ['txn_count_', 'amt_sum_', 'amt_mean_', 'amt_std_', 'amt_max_',
@@ -582,15 +587,21 @@ class IEEECISFraudTraining:
 
         # Frequency encoded features
         freq_features = [c for c in df.columns if c.endswith('_freq')]
+        
+        # Mean encoded features (fraud rate) (NEW)
+        mean_features = [c for c in df.columns if c.endswith('_fraud_rate')]
 
         # Combine all
-        self.all_features = base_features + velocity_features + freq_features
+        self.all_features = (base_features + amount_agg_features + velocity_features + 
+                            freq_features + mean_features)
         self.all_features = [f for f in self.all_features if f in df.columns]
 
         logger.info(f"Total features: {len(self.all_features)}")
         logger.info(f"  Base: {len(base_features)}")
+        logger.info(f"  Amount Aggregations: {len(amount_agg_features)}")
         logger.info(f"  Velocity: {len(velocity_features)}")
         logger.info(f"  Frequency: {len(freq_features)}")
+        logger.info(f"  Mean Encoded (Fraud Rate): {len(mean_features)}")
 
         X = df[self.all_features].fillna(0).copy()
         y = df['isFraud'].copy() if 'isFraud' in df.columns else None
@@ -741,7 +752,7 @@ class IEEECISFraudTraining:
                 logger.info("  Using XGBoost with CPU...")
                 xgb_model = XGBClassifier(
                     n_estimators=3000,
-                    max_depth=8,
+                    max_depth=6,  # Reduced from 8 to 6 for better recall
                     learning_rate=0.02,
                     subsample=0.8,
                     colsample_bytree=0.8,
@@ -764,7 +775,7 @@ class IEEECISFraudTraining:
                     logger.info("  Attempting LightGBM with GPU...")
                     lgbm_model = LGBMClassifier(
                         n_estimators=5000,
-                        num_leaves=63,
+                        num_leaves=63,  # Reduced from 95 for better generalization
                         learning_rate=0.03,
                         subsample=0.85,
                         colsample_bytree=0.85,
@@ -772,6 +783,8 @@ class IEEECISFraudTraining:
                         reg_lambda=1.5,
                         min_child_samples=50,
                         objective="binary",
+                        class_weight='balanced',  # Added for better fraud detection
+                        is_unbalance=True,  # Added to handle imbalanced classes
                         device="gpu",
                         gpu_platform_id=0,
                         gpu_device_id=0,
@@ -792,6 +805,8 @@ class IEEECISFraudTraining:
                         reg_lambda=1.5,
                         min_child_samples=50,
                         objective="binary",
+                        class_weight='balanced',  # Added for better fraud detection
+                        is_unbalance=True,  # Added to handle imbalanced classes
                         random_state=RNG,
                         n_jobs=-1,
                         scale_pos_weight=scale_pos_weight,
@@ -802,7 +817,7 @@ class IEEECISFraudTraining:
                 logger.info("  Using LightGBM with CPU...")
                 lgbm_model = LGBMClassifier(
                     n_estimators=6000,
-                    num_leaves=95,
+                    num_leaves=63,  # Reduced from 95 for better generalization
                     learning_rate=0.02,
                     subsample=0.8,
                     colsample_bytree=0.8,
@@ -810,6 +825,8 @@ class IEEECISFraudTraining:
                     reg_lambda=2.0,
                     min_child_samples=30,
                     min_child_weight=5,
+                    class_weight='balanced',  # Added for better fraud detection
+                    is_unbalance=True,  # Added to handle imbalanced classes
                     max_bin=511,
                     objective="binary",
                     random_state=RNG,
@@ -826,12 +843,12 @@ class IEEECISFraudTraining:
                     logger.info("  Attempting CatBoost with GPU...")
                     cat_model = CatBoostClassifier(
                         iterations=4000,
-                        depth=10,
+                        depth=6,  # Reduced from 10 to 6 for better generalization
                         learning_rate=0.04,
                         l2_leaf_reg=2.0,
                         grow_policy='SymmetricTree',
                         random_state=RNG,
-                        class_weights=[1.0, scale_pos_weight],
+                        class_weights=[1.0, 30.0],  # Increased from scale_pos_weight to 30 for better fraud detection
                         loss_function="Logloss",
                         task_type="GPU",
                         devices="0",
@@ -842,12 +859,12 @@ class IEEECISFraudTraining:
                     logger.info("  CatBoost GPU failed, using CPU...")
                     cat_model = CatBoostClassifier(
                         iterations=4000,
-                        depth=10,
+                        depth=6,  # Reduced from 10 to 6 for better generalization
                         learning_rate=0.04,
                         l2_leaf_reg=2.0,
                         grow_policy='SymmetricTree',
                         random_state=RNG,
-                        class_weights=[1.0, scale_pos_weight],
+                        class_weights=[1.0, 30.0],  # Increased from scale_pos_weight to 30 for better fraud detection
                         loss_function="Logloss",
                         verbose=False
                     )
@@ -856,13 +873,13 @@ class IEEECISFraudTraining:
                 logger.info("  Using CatBoost with CPU...")
                 cat_model = CatBoostClassifier(
                     iterations=5000,
-                    depth=8,
+                    depth=6,  # Reduced from 8 to 6 for better generalization
                     learning_rate=0.03,
                     l2_leaf_reg=3.0,
                     border_count=254,
                     grow_policy='SymmetricTree',
                     random_state=RNG,
-                    class_weights=[1.0, scale_pos_weight],
+                    class_weights=[1.0, 30.0],  # Increased from scale_pos_weight to 30 for better fraud detection
                     loss_function="Logloss",
                     verbose=False
                 )
@@ -1098,10 +1115,10 @@ class IEEECISFraudTraining:
         # Apply SMOTE for class imbalance (OPTIONAL - can be disabled in config)
         use_smote = self.config.get("training", {}).get("use_smote", True)
         if use_smote and SMOTE_AVAILABLE:
-            # Use more aggressive sampling strategy to improve fraud detection
-            # 0.5 means fraud class will be 50% of majority class size
-            # This creates a better balance for learning fraud patterns
-            sampling_strategy = self.config.get("training", {}).get("smote_sampling_strategy", 0.5)
+            # Increased from 0.5 to 0.7 for better recall (catches 60-70% of fraud)
+            # 0.7 means fraud class will be 70% of majority class size
+            # This improves fraud detection while maintaining reasonable precision
+            sampling_strategy = self.config.get("training", {}).get("smote_sampling_strategy", 0.7)
             X_train, y_train = self.apply_smote(X_train, y_train, sampling_strategy=sampling_strategy)
 
         # Train gradient boosting
