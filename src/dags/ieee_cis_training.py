@@ -161,8 +161,8 @@ if TF_AVAILABLE:
                     tf.reduce_sum(tf.square(data - reconstruction), axis=1)
                 )
 
-                # KL divergence (with numerical stability - clip z_log_var)
-                z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 2.0)
+                # KL divergence - clip to prevent explosion (tighter bounds)
+                z_log_var_clipped = tf.clip_by_value(z_log_var, -15.0, 2.0)
                 kl_loss = -0.5 * tf.reduce_mean(
                     tf.reduce_sum(
                         1 + z_log_var_clipped - tf.square(z_mean) - tf.exp(z_log_var_clipped),
@@ -170,8 +170,8 @@ if TF_AVAILABLE:
                     )
                 )
 
-                # Total loss with KL weighting (β-VAE approach for stability)
-                beta = 0.1  # Lower beta = less KL penalty = more stable
+                # β-VAE with very low β (0.01 instead of 0.1)
+                beta = 0.01
                 total_loss = reconstruction_loss + beta * kl_loss
 
                 # Check for NaN
@@ -179,8 +179,8 @@ if TF_AVAILABLE:
 
             grads = tape.gradient(total_loss, self.trainable_weights)
 
-            # Clip gradients to prevent explosion
-            grads = [tf.clip_by_norm(g, 5.0) if g is not None else None for g in grads]
+            # Global norm clipping (more aggressive)
+            grads, _ = tf.clip_by_global_norm(grads, 5.0)
 
             self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
@@ -713,9 +713,15 @@ class IEEECISFraudTraining:
         train_vae_scores = []
         valid_vae_scores = []
 
-        for vae in self.vae_models:
+        for i, vae in enumerate(self.vae_models):
             train_recon_error = vae.get_reconstruction_error(X_train_scaled)
             valid_recon_error = vae.get_reconstruction_error(X_valid_scaled)
+
+            # Sanity check: abort if VAE still produces NaNs
+            sample_check = train_recon_error[:1000]
+            nan_ratio = np.isnan(sample_check).mean()
+            if nan_ratio > 0.1:
+                raise RuntimeError(f"VAE {i+1} produces {nan_ratio*100:.1f}% NaNs - training failed!")
 
             train_vae_scores.append(train_recon_error)
             valid_vae_scores.append(valid_recon_error)
@@ -951,10 +957,11 @@ class IEEECISFraudTraining:
                 try:
                     logger.info("  Attempting CatBoost with GPU...")
                     cat_model = CatBoostClassifier(
-                        iterations=3000,
-                        depth=6,
-                        learning_rate=0.03,
-                        l2_leaf_reg=3.0,
+                        iterations=4000,
+                        depth=10,
+                        learning_rate=0.04,
+                        l2_leaf_reg=2.0,
+                        grow_policy='SymmetricTree',
                         random_state=RNG,
                         class_weights=[1.0, scale_pos_weight],
                         loss_function="Logloss",
@@ -966,10 +973,11 @@ class IEEECISFraudTraining:
                 except:
                     logger.info("  CatBoost GPU failed, using CPU...")
                     cat_model = CatBoostClassifier(
-                        iterations=3000,
-                        depth=6,
-                        learning_rate=0.03,
-                        l2_leaf_reg=3.0,
+                        iterations=4000,
+                        depth=10,
+                        learning_rate=0.04,
+                        l2_leaf_reg=2.0,
+                        grow_policy='SymmetricTree',
                         random_state=RNG,
                         class_weights=[1.0, scale_pos_weight],
                         loss_function="Logloss",
@@ -979,10 +987,11 @@ class IEEECISFraudTraining:
             else:
                 logger.info("  Using CatBoost with CPU...")
                 cat_model = CatBoostClassifier(
-                    iterations=3000,
-                    depth=6,
-                    learning_rate=0.03,
-                    l2_leaf_reg=3.0,
+                    iterations=4000,
+                    depth=10,
+                    learning_rate=0.04,
+                    l2_leaf_reg=2.0,
+                    grow_policy='SymmetricTree',
                     random_state=RNG,
                     class_weights=[1.0, scale_pos_weight],
                     loss_function="Logloss",
@@ -999,8 +1008,17 @@ class IEEECISFraudTraining:
             try:
                 logger.info(f"  Training {name}...")
 
-                if 'XGBoost' in name or 'LightGBM' in name:
+                if 'XGBoost' in name:
                     model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=False)
+                elif 'LightGBM' in name:
+                    # Import log_evaluation callback for LightGBM
+                    try:
+                        from lightgbm.callback import log_evaluation
+                        model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)],
+                                callbacks=[log_evaluation(period=100)])
+                    except (ImportError, AttributeError):
+                        # Fallback for older lightgbm versions
+                        model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)])
                 else:
                     model.fit(X_train, y_train, eval_set=(X_valid, y_valid), use_best_model=True)
 

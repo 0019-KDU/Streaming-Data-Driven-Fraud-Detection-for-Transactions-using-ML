@@ -30,6 +30,9 @@ training:
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
   experiment_name: "ieee_cis_fraud_detection"
   force_cpu_only: true  # Skip GPU attempts, use CPU directly (for VMs without GPU)
+  # SMOTE configuration for class imbalance handling
+  use_smote: true
+  smote_sampling_strategy: 0.6  # 60% of majority class (creates ~40% fraud in resampled data)
 
 model:
   test_size: 0.2
