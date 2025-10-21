@@ -1,28 +1,11 @@
 mlflow:
-  # MLflow server configuration with fallback options
-  tracking_uri: 
-    - "http://mlflow-server:5500"  # Primary MLflow server
-    - "http://localhost:5000"      # Local fallback
-    - "http://127.0.0.1:5000"     # Another local option
-  registered_model_name: "fraud_detection_xgboost"
-  model_stage: "Production"        # Model stage to use
   experiment_name: "fraud_detection"
-  
-  # S3/MinIO configuration for artifacts
+  registered_model_name: "fraud_detection_xgboost"
+  tracking_uri: "http://mlflow-server:5500"
   artifact_location: "s3://mlflow/fraud_detection"
   s3_endpoint_url: "http://minio:9000"
   bucket: "mlflow"
-  
-  # Fallback configuration
-  use_local_if_mlflow_fails: true
-  local_model_paths:
-    - "/app/models/fraud_detection_model.pkl"
-    - "models/fraud_detection_model.pkl"
-    - "../models/fraud_detection_model.pkl"
-  
-  # MLflow retry settings
-  max_retries: 3
-  retry_delay: 5  # seconds
+  model_stage: "Production"
 
 kafka:
   bootstrap_servers: "pkc-921jm.us-east-2.aws.confluent.cloud:9092"
