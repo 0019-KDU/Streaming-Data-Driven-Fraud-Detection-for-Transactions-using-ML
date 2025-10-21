@@ -244,6 +244,17 @@ class IEEECISFraudTraining:
         for col in ['P_emaildomain', 'R_emaildomain']:
             if col in df.columns:
                 df[col] = df[col].replace({'email_not_provided': pd.NA, 'unknown': pd.NA})
+        
+        # Encode M columns (T/F to 1/0, M0/M1/M2 to numeric)
+        m_cols = [f'M{i}' for i in range(1, 10)]
+        m_dict = {'T': 1, 'F': 0, 't': 1, 'f': 0, 'M0': 0, 'M1': 1, 'M2': 2}
+        for col in m_cols:
+            if col in df.columns:
+                df[col] = df[col].map(m_dict).fillna(-1).astype('int8')
+        
+        # Fill DeviceType missing values
+        if 'DeviceType' in df.columns:
+            df['DeviceType'] = df['DeviceType'].fillna('missing')
 
         # Target
         df['isFraud'] = df['isFraud'].astype('int8')
@@ -284,7 +295,7 @@ class IEEECISFraudTraining:
         return df
 
     def create_amount_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create transaction amount features"""
+        """Create transaction amount features with aggregations"""
         logger.info("Creating amount features...")
         df = df.copy()
 
@@ -292,6 +303,40 @@ class IEEECISFraudTraining:
             df['TransactionAmt'] = df['TransactionAmt'].astype('float32')
             df['log_TransactionAmt'] = np.log1p(df['TransactionAmt'].fillna(0)).astype('float32')
             df['sqrt_TransactionAmt'] = np.sqrt(df['TransactionAmt'].fillna(0)).astype('float32')
+            
+            # Decimal part of transaction amount
+            df['TransactionAmt_decimal'] = ((df['TransactionAmt'] - df['TransactionAmt'].astype(int)) * 1000).astype('int16')
+            
+            # Card1 aggregations (ratio to mean/std)
+            if 'card1' in df.columns:
+                card1_mean = df.groupby('card1')['TransactionAmt'].transform('mean')
+                card1_std = df.groupby('card1')['TransactionAmt'].transform('std')
+                df['TransactionAmt_to_mean_card1'] = (df['TransactionAmt'] / (card1_mean + 1e-5)).astype('float32')
+                df['TransactionAmt_to_std_card1'] = (df['TransactionAmt'] / (card1_std + 1e-5)).astype('float32')
+            
+            # Card4 aggregations
+            if 'card4' in df.columns:
+                card4_mean = df.groupby('card4')['TransactionAmt'].transform('mean')
+                card4_std = df.groupby('card4')['TransactionAmt'].transform('std')
+                df['TransactionAmt_to_mean_card4'] = (df['TransactionAmt'] / (card4_mean + 1e-5)).astype('float32')
+                df['TransactionAmt_to_std_card4'] = (df['TransactionAmt'] / (card4_std + 1e-5)).astype('float32')
+            
+            # D15 aggregations (if exists)
+            if 'D15' in df.columns:
+                if 'card1' in df.columns:
+                    d15_mean_card1 = df.groupby('card1')['D15'].transform('mean')
+                    d15_std_card1 = df.groupby('card1')['D15'].transform('std')
+                    df['D15_to_mean_card1'] = (df['D15'] / (d15_mean_card1 + 1e-5)).astype('float32')
+                    df['D15_to_std_card1'] = (df['D15'] / (d15_std_card1 + 1e-5)).astype('float32')
+                
+                if 'addr1' in df.columns:
+                    d15_mean_addr1 = df.groupby('addr1')['D15'].transform('mean')
+                    d15_std_addr1 = df.groupby('addr1')['D15'].transform('std')
+                    df['D15_to_mean_addr1'] = (df['D15'] / (d15_mean_addr1 + 1e-5)).astype('float32')
+                    df['D15_to_std_addr1'] = (df['D15'] / (d15_std_addr1 + 1e-5)).astype('float32')
+            
+            # Replace inf values with nan
+            df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
         return df
 
@@ -471,6 +516,52 @@ class IEEECISFraudTraining:
 
         logger.info(f"  Dropped {len(drop_cols)} high-cardinality columns")
 
+        return train_df, valid_df
+
+    def apply_mean_encoding(
+        self,
+        train_df: pd.DataFrame,
+        valid_df: pd.DataFrame
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Apply mean/target encoding (fraud rate) to categorical variables
+        
+        This encodes each category with its fraud rate from training data.
+        More powerful than frequency encoding for fraud detection.
+        """
+        logger.info("Applying mean encoding (fraud rate)...")
+        
+        # Columns to mean encode
+        mean_encode_cols = ['P_emaildomain', 'R_emaildomain', 'DeviceInfo', 'DeviceType',
+                           'card4', 'card6', 'ProductCD']
+        
+        # Add id columns if they exist
+        id_cols = [f'id_{i}' for i in [12, 15, 16, 23, 27, 28, 29, 30, 31, 33, 34, 35, 36, 37, 38]]
+        mean_encode_cols.extend([c for c in id_cols if c in train_df.columns])
+        
+        mean_encode_cols = [c for c in mean_encode_cols if c in train_df.columns]
+        
+        # Fit on train
+        self.mean_maps = {}
+        global_fraud_rate = train_df['isFraud'].mean()
+        
+        for col in mean_encode_cols:
+            # Fill missing values
+            train_df[col] = train_df[col].fillna('missing')
+            valid_df[col] = valid_df[col].fillna('missing')
+            
+            # Calculate fraud rate per category
+            fraud_rate = train_df.groupby(col)['isFraud'].mean().to_dict()
+            self.mean_maps[col] = fraud_rate
+            
+            # Apply to train (with smoothing to prevent overfitting)
+            train_df[col + '_fraud_rate'] = train_df[col].map(fraud_rate).fillna(global_fraud_rate).astype('float32')
+            
+            # Apply to valid (unknown categories get global rate)
+            valid_df[col + '_fraud_rate'] = valid_df[col].map(fraud_rate).fillna(global_fraud_rate).astype('float32')
+        
+        logger.info(f"  Mean encoded {len(mean_encode_cols)} columns with fraud rates")
+        
         return train_df, valid_df
 
     def select_all_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
@@ -990,6 +1081,9 @@ class IEEECISFraudTraining:
 
         # Frequency encoding
         train_df, valid_df = self.apply_frequency_encoding(train_df, valid_df)
+        
+        # Mean encoding (fraud rate encoding) - more powerful than frequency
+        train_df, valid_df = self.apply_mean_encoding(train_df, valid_df)
 
         # Select features
         X_train, y_train = self.select_all_features(train_df)
