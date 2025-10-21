@@ -685,10 +685,10 @@ class IEEECISFraudTraining:
             vae = VAE(input_dim=X_train_scaled.shape[1], latent_dim=16)
             vae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001))
 
-            # Use 'loss' instead of 'total_loss' for Keras 3.x compatibility
+            # Monitor 'total_loss' for Keras 3.x VAE custom training loop
             callbacks = [
-                EarlyStopping(monitor='loss', mode='min', patience=10, restore_best_weights=True, verbose=0),
-                ReduceLROnPlateau(monitor='loss', mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=0)
+                EarlyStopping(monitor='total_loss', mode='min', patience=10, restore_best_weights=True, verbose=0),
+                ReduceLROnPlateau(monitor='total_loss', mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=0)
             ]
 
             history = vae.fit(
@@ -760,6 +760,11 @@ class IEEECISFraudTraining:
         logger.info(f"  Original distribution:")
         logger.info(f"    Fraud: {y_train.sum():,} ({y_train.mean():.2%})")
         logger.info(f"    Legit: {(y_train == 0).sum():,} ({(y_train == 0).mean():.2%})")
+
+        # Fill NaN values (from VAE scores) before SMOTE
+        if X_train.isna().any().any():
+            logger.info(f"  Filling {X_train.isna().sum().sum()} NaN values before SMOTE...")
+            X_train = X_train.fillna(0)
 
         # Create SMOTE sampler
         # Note: n_jobs parameter only available in imbalanced-learn >= 0.12.0
