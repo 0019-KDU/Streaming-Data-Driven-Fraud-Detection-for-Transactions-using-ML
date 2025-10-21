@@ -17,6 +17,7 @@ import logging
 import os
 import json
 from datetime import datetime
+from collections import deque
 
 # Third-party imports
 import numpy as np
@@ -52,6 +53,107 @@ RISKY_DOMAINS = {
     'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
     'yopmail.com', '10minutemail.com', 'guerrillamail.com'
 }
+
+
+# ==================== ADAPTIVE THRESHOLD SYSTEM ====================
+class AdaptiveThresholdSystem:
+    """
+    Adaptive threshold that adjusts based on recent fraud rates
+    and velocity risk patterns (copied from training for compatibility)
+    """
+    def __init__(self, base_threshold=0.5, window_size=1000,
+                 min_threshold=0.1, max_threshold=0.9):
+        self.base_threshold = base_threshold
+        self.window_size = window_size
+        self.min_threshold = min_threshold
+        self.max_threshold = max_threshold
+        self.recent_predictions = deque(maxlen=window_size)
+        self.recent_true_labels = deque(maxlen=window_size)
+        self.current_threshold = base_threshold
+        self.threshold_history = []
+
+    def update(self, y_true, y_pred_proba, velocity_risk):
+        """Update threshold based on recent performance"""
+        self.recent_predictions.append(y_pred_proba)
+        self.recent_true_labels.append(y_true)
+
+        if len(self.recent_predictions) < 100:
+            return self.current_threshold
+
+        recent_fraud_rate = np.mean(self.recent_true_labels)
+        recent_preds_binary = np.array(self.recent_predictions) >= self.current_threshold
+        recent_accuracy = np.mean(recent_preds_binary == np.array(self.recent_true_labels))
+
+        adjustment = 0
+        if recent_fraud_rate > 0.05:
+            adjustment = -0.02
+        elif recent_fraud_rate < 0.02:
+            adjustment = 0.02
+
+        if velocity_risk > 0.7:
+            adjustment -= 0.01
+
+        self.current_threshold = np.clip(
+            self.current_threshold + adjustment,
+            self.min_threshold,
+            self.max_threshold
+        )
+
+        self.threshold_history.append({
+            'threshold': self.current_threshold,
+            'fraud_rate': recent_fraud_rate,
+            'accuracy': recent_accuracy
+        })
+
+        return self.current_threshold
+
+    def get_threshold(self, velocity_risk=0.0):
+        """Get current threshold, adjusted for velocity risk"""
+        adjusted = self.current_threshold
+
+        if velocity_risk > 0.8:
+            adjusted *= 0.9
+        elif velocity_risk > 0.6:
+            adjusted *= 0.95
+
+        return np.clip(adjusted, self.min_threshold, self.max_threshold)
+
+    def get_hybrid_threshold(self, velocity_risk, amount_risk=0.0, 
+                            method='weighted', w1=0.6, w2=0.3, w3=0.1):
+        """
+        Hybrid threshold combining F1-optimal with risk-based adjustments
+        
+        Industry best practice: τ_hybrid = w₁·τ_A + w₂·τ_V + w₃·τ_Amount
+        
+        Args:
+            velocity_risk: 0-1 velocity risk score
+            amount_risk: 0-1 amount risk score
+            method: 'weighted', 'dynamic', 'max', or 'min'
+            w1, w2, w3: Weights (sum to 1.0)
+        
+        Returns:
+            float: Hybrid threshold
+        """
+        tau_A = self.current_threshold
+        tau_V = self.base_threshold - (velocity_risk * 0.15)
+        tau_Amount = self.base_threshold - (amount_risk * 0.10)
+        
+        if method == 'max':
+            tau = max(tau_A, tau_V, tau_Amount)
+        elif method == 'min':
+            tau = min(tau_A, tau_V, tau_Amount)
+        elif method == 'dynamic':
+            if velocity_risk > 0.7:
+                w1, w2, w3 = 0.3, 0.5, 0.2
+            elif amount_risk > 0.7:
+                w1, w2, w3 = 0.3, 0.2, 0.5
+            else:
+                w1, w2, w3 = 0.6, 0.2, 0.2
+            tau = w1 * tau_A + w2 * tau_V + w3 * tau_Amount
+        else:  # weighted
+            tau = w1 * tau_A + w2 * tau_V + w3 * tau_Amount
+        
+        return np.clip(tau, self.min_threshold, self.max_threshold)
 
 
 class EnhancedFraudDetectionInference:
@@ -572,8 +674,58 @@ class EnhancedFraudDetectionInference:
                     0.15  # Minimum probability for rule-based flags (above typical thresholds)
                 )
 
-                # Apply threshold (using adjusted probabilities)
-                predictions = (adjusted_probabilities >= threshold).astype(int)
+                # ========== HYBRID THRESHOLD APPLICATION ==========
+                # Calculate per-transaction adaptive thresholds
+                per_transaction_thresholds = np.zeros(n)
+                
+                for i in range(n):
+                    # Calculate velocity risk
+                    velocity_risk = 0.0
+                    if 'velocity_risk_score' in input_df.columns:
+                        velocity_risk = input_df.loc[input_df.index[i], 'velocity_risk_score']
+                    
+                    # Calculate amount risk
+                    amount = TransactionAmt.iloc[i]
+                    if amount > 1000:
+                        amount_risk = min(0.9, 0.5 + (amount - 1000) / 10000)
+                    elif amount > 500:
+                        amount_risk = 0.7
+                    elif amount > 200:
+                        amount_risk = 0.5
+                    elif amount < 1.0:
+                        amount_risk = 0.9  # Very low amounts are suspicious
+                    else:
+                        amount_risk = 0.1
+                    
+                    # Use hybrid threshold if adaptive system available
+                    if hasattr(broadcast_model.value, 'get') and \
+                       'adaptive_threshold_system' in broadcast_model.value and \
+                       broadcast_model.value['adaptive_threshold_system'] is not None:
+                        adaptive_system = broadcast_model.value['adaptive_threshold_system']
+                        per_transaction_thresholds[i] = adaptive_system.get_hybrid_threshold(
+                            velocity_risk=velocity_risk,
+                            amount_risk=amount_risk,
+                            method='dynamic'  # Use dynamic weights
+                        )
+                    else:
+                        # Fallback: manual hybrid calculation
+                        base_threshold = threshold
+                        tau_V = base_threshold - (velocity_risk * 0.15)
+                        tau_Amount = base_threshold - (amount_risk * 0.10)
+                        
+                        # Dynamic weights
+                        if velocity_risk > 0.7:
+                            w1, w2, w3 = 0.3, 0.5, 0.2
+                        elif amount_risk > 0.7:
+                            w1, w2, w3 = 0.3, 0.2, 0.5
+                        else:
+                            w1, w2, w3 = 0.6, 0.2, 0.2
+                        
+                        tau_hybrid = w1 * base_threshold + w2 * tau_V + w3 * tau_Amount
+                        per_transaction_thresholds[i] = np.clip(tau_hybrid, 0.15, 0.85)
+
+                # Apply per-transaction thresholds (using adjusted probabilities)
+                predictions = (adjusted_probabilities >= per_transaction_thresholds).astype(int)
 
                 # Also flag as fraud if rule-based criteria are met, regardless of threshold
                 predictions[rule_based_flags] = 1
@@ -593,12 +745,20 @@ class EnhancedFraudDetectionInference:
                              np.where(predictions == 1, "REVIEW", "APPROVE"))
                 )
 
-                # Generate risk factors (including velocity-based and rule-based factors)
+                # Generate risk factors (including velocity-based, rule-based, and threshold info)
                 risk_factors_list = []
                 for i in range(n):
                     factors = []
                     # Collect risk factors for any flagged transaction (model-based OR rule-based)
-                    if predictions[i] == 1 or probabilities[i] >= threshold or rule_based_flags[i]:
+                    if predictions[i] == 1 or probabilities[i] >= per_transaction_thresholds[i] or rule_based_flags[i]:
+                        # Threshold adjustment info
+                        threshold_diff = per_transaction_thresholds[i] - threshold
+                        if abs(threshold_diff) > 0.05:
+                            if threshold_diff < 0:
+                                factors.append(f"threshold_lowered_{abs(threshold_diff):.2f}")
+                            else:
+                                factors.append(f"threshold_raised_{threshold_diff:.2f}")
+                        
                         # Email-based risk
                         if email_risky.iloc[i] == 1:
                             factors.append("risky_email_domain")

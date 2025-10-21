@@ -27,12 +27,17 @@ import yaml
 import joblib
 import mlflow
 import mlflow.sklearn
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for server
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.preprocessing import RobustScaler
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
-    average_precision_score, precision_recall_curve,
+    average_precision_score, precision_recall_curve, roc_curve,
     precision_score, recall_score, f1_score, roc_auc_score,
-    confusion_matrix
+    confusion_matrix, classification_report, matthews_corrcoef,
+    cohen_kappa_score, balanced_accuracy_score
 )
 
 # Import feature pipeline
@@ -153,6 +158,68 @@ class AdaptiveThresholdSystem:
             adjusted *= 0.95
 
         return np.clip(adjusted, self.min_threshold, self.max_threshold)
+
+    def get_hybrid_threshold(self, velocity_risk, amount_risk=0.0, 
+                            method='weighted', w1=0.6, w2=0.3, w3=0.1):
+        """
+        Hybrid threshold combining F1-optimal with risk-based adjustments
+        
+        Industry best practice: τ_hybrid = w₁·τ_A + w₂·τ_V + w₃·τ_Amount
+        
+        Args:
+            velocity_risk: 0-1 velocity risk score (high velocity = lower threshold)
+            amount_risk: 0-1 amount risk score (high amount = lower threshold)
+            method: Combination strategy
+                - 'weighted': Fixed weighted average (default)
+                - 'dynamic': Adaptive weights based on risk confidence
+                - 'max': Most conservative (highest threshold)
+                - 'min': Most aggressive (lowest threshold)
+            w1, w2, w3: Weights for adaptive, velocity, amount (sum to 1.0)
+        
+        Returns:
+            float: Hybrid threshold bounded by min/max thresholds
+        
+        Examples:
+            Low risk:  τ_hybrid = 0.42 (near F1-optimal)
+            High velocity: τ_hybrid = 0.32 (stricter detection)
+            High amount: τ_hybrid = 0.35 (stricter detection)
+        """
+        # Component thresholds
+        tau_A = self.current_threshold  # F1-optimal base (statistical)
+        tau_V = self.base_threshold - (velocity_risk * 0.15)  # Velocity-adjusted
+        tau_Amount = self.base_threshold - (amount_risk * 0.10)  # Amount-adjusted
+        
+        if method == 'max':
+            # Most conservative: Take highest threshold (hardest to flag fraud)
+            # Use when: False positives are very costly
+            tau = max(tau_A, tau_V, tau_Amount)
+            
+        elif method == 'min':
+            # Most aggressive: Take lowest threshold (easiest to flag fraud)
+            # Use when: False negatives are very costly
+            tau = min(tau_A, tau_V, tau_Amount)
+            
+        elif method == 'dynamic':
+            # Dynamic weights based on signal confidence
+            # High risk signals get more weight
+            if velocity_risk > 0.7:
+                # Trust velocity signal more
+                w1, w2, w3 = 0.3, 0.5, 0.2
+            elif amount_risk > 0.7:
+                # Trust amount signal more
+                w1, w2, w3 = 0.3, 0.2, 0.5
+            else:
+                # Trust F1-optimal statistical threshold
+                w1, w2, w3 = 0.6, 0.2, 0.2
+            
+            tau = w1 * tau_A + w2 * tau_V + w3 * tau_Amount
+            
+        else:  # 'weighted' (default)
+            # Fixed weighted average
+            tau = w1 * tau_A + w2 * tau_V + w3 * tau_Amount
+        
+        # Apply safety bounds
+        return np.clip(tau, self.min_threshold, self.max_threshold)
 
 
 # ==================== MAIN TRAINING CLASS ====================
@@ -783,13 +850,12 @@ class IEEECISFraudTraining:
                         reg_lambda=1.5,
                         min_child_samples=50,
                         objective="binary",
-                        class_weight='balanced',  # Added for better fraud detection
-                        is_unbalance=True,  # Added to handle imbalanced classes
+                        class_weight='balanced',  # Better fraud detection
+                        is_unbalance=True,  # Handle imbalanced classes (replaces scale_pos_weight)
                         device="gpu",
                         gpu_platform_id=0,
                         gpu_device_id=0,
                         random_state=RNG,
-                        scale_pos_weight=scale_pos_weight,
                         verbose=-1
                     )
                     models_to_try.append(('LightGBM-GPU', lgbm_model))
@@ -805,11 +871,10 @@ class IEEECISFraudTraining:
                         reg_lambda=1.5,
                         min_child_samples=50,
                         objective="binary",
-                        class_weight='balanced',  # Added for better fraud detection
-                        is_unbalance=True,  # Added to handle imbalanced classes
+                        class_weight='balanced',  # Better fraud detection
+                        is_unbalance=True,  # Handle imbalanced classes (replaces scale_pos_weight)
                         random_state=RNG,
                         n_jobs=-1,
-                        scale_pos_weight=scale_pos_weight,
                         verbose=-1
                     )
                     models_to_try.append(('LightGBM', lgbm_model))
@@ -825,13 +890,12 @@ class IEEECISFraudTraining:
                     reg_lambda=2.0,
                     min_child_samples=30,
                     min_child_weight=5,
-                    class_weight='balanced',  # Added for better fraud detection
-                    is_unbalance=True,  # Added to handle imbalanced classes
+                    class_weight='balanced',  # Better fraud detection
+                    is_unbalance=True,  # Handle imbalanced classes (replaces scale_pos_weight)
                     max_bin=511,
                     objective="binary",
                     random_state=RNG,
                     n_jobs=-1,
-                    scale_pos_weight=scale_pos_weight,
                     verbose=-1
                 )
                 models_to_try.append(('LightGBM', lgbm_model))
@@ -1021,7 +1085,7 @@ class IEEECISFraudTraining:
         y_valid_proba: np.ndarray,
         threshold: float
     ):
-        """Log experiment to MLflow"""
+        """Log experiment to MLflow with comprehensive metrics and visualizations"""
         experiment_name = self.config.get("training", {}).get(
             "experiment_name", "ieee_cis_fraud_detection"
         )
@@ -1029,37 +1093,221 @@ class IEEECISFraudTraining:
         mlflow.set_experiment(experiment_name)
 
         with mlflow.start_run():
-            # Log parameters
+            # ========== LOG PARAMETERS ==========
             mlflow.log_param("model_type", "EnhancedEnsemble")
             mlflow.log_param("n_features", len(self.all_features))
-            mlflow.log_param("n_vae_models", len(self.vae_models))
-            mlflow.log_param("base_threshold", threshold)
+            mlflow.log_param("smote_enabled", True)
+            mlflow.log_param("smote_strategy", 0.7)
+            mlflow.log_param("base_threshold", float(threshold))
+            mlflow.log_param("threshold_method", "hybrid")
             mlflow.log_param("velocity_features", "enabled")
             mlflow.log_param("adaptive_threshold", "enabled")
+            mlflow.log_param("hybrid_threshold", "enabled")
             mlflow.log_param("frequency_encoding", "enabled")
-
-            # Log metrics
+            mlflow.log_param("mean_encoding", "enabled")
+            
+            # Get predictions
             y_valid_pred = (y_valid_proba >= threshold).astype(int)
 
-            mlflow.log_metric("auc_pr", average_precision_score(y_valid, y_valid_proba))
-            mlflow.log_metric("auc_roc", roc_auc_score(y_valid, y_valid_proba))
-            mlflow.log_metric("precision", precision_score(y_valid, y_valid_pred))
-            mlflow.log_metric("recall", recall_score(y_valid, y_valid_pred))
-            mlflow.log_metric("f1_score", f1_score(y_valid, y_valid_pred))
+            # ========== LOG CORE METRICS ==========
+            mlflow.log_metric("auc_pr", float(average_precision_score(y_valid, y_valid_proba)))
+            mlflow.log_metric("auc_roc", float(roc_auc_score(y_valid, y_valid_proba)))
+            mlflow.log_metric("precision", float(precision_score(y_valid, y_valid_pred)))
+            mlflow.log_metric("recall", float(recall_score(y_valid, y_valid_pred)))
+            mlflow.log_metric("f1_score", float(f1_score(y_valid, y_valid_pred)))
+            
+            # ========== LOG ADDITIONAL METRICS ==========
+            mlflow.log_metric("balanced_accuracy", float(balanced_accuracy_score(y_valid, y_valid_pred)))
+            mlflow.log_metric("matthews_corrcoef", float(matthews_corrcoef(y_valid, y_valid_pred)))
+            mlflow.log_metric("cohen_kappa", float(cohen_kappa_score(y_valid, y_valid_pred)))
 
-            # Log confusion matrix
+            # Log confusion matrix values
             cm = confusion_matrix(y_valid, y_valid_pred)
             mlflow.log_metric("true_positives", int(cm[1, 1]))
             mlflow.log_metric("false_positives", int(cm[0, 1]))
             mlflow.log_metric("true_negatives", int(cm[0, 0]))
             mlflow.log_metric("false_negatives", int(cm[1, 0]))
+            
+            # Calculate and log rates
+            tn, fp, fn, tp = cm.ravel()
+            mlflow.log_metric("true_positive_rate", float(tp / (tp + fn) if (tp + fn) > 0 else 0))
+            mlflow.log_metric("false_positive_rate", float(fp / (fp + tn) if (fp + tn) > 0 else 0))
+            mlflow.log_metric("true_negative_rate", float(tn / (tn + fp) if (tn + fp) > 0 else 0))
+            mlflow.log_metric("false_negative_rate", float(fn / (fn + tp) if (fn + tp) > 0 else 0))
+            
+            # ========== CREATE AND LOG VISUALIZATIONS ==========
+            try:
+                # Set style
+                sns.set_style("whitegrid")
+                plt.rcParams['figure.figsize'] = (12, 8)
+                
+                # 1. Confusion Matrix Heatmap
+                fig, ax = plt.subplots(figsize=(8, 6))
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+                           xticklabels=['Legit', 'Fraud'],
+                           yticklabels=['Legit', 'Fraud'])
+                ax.set_ylabel('Actual')
+                ax.set_xlabel('Predicted')
+                ax.set_title(f'Confusion Matrix\n(Threshold: {threshold:.4f})')
+                plt.tight_layout()
+                mlflow.log_figure(fig, "confusion_matrix.png")
+                plt.close(fig)
+                
+                # 2. Precision-Recall Curve
+                precision_curve, recall_curve, pr_thresholds = precision_recall_curve(y_valid, y_valid_proba)
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(recall_curve, precision_curve, 'b-', linewidth=2, label=f'AUC-PR: {average_precision_score(y_valid, y_valid_proba):.4f}')
+                ax.axhline(y=y_valid.mean(), color='r', linestyle='--', label=f'Baseline: {y_valid.mean():.4f}')
+                ax.scatter([recall_score(y_valid, y_valid_pred)], 
+                          [precision_score(y_valid, y_valid_pred)], 
+                          c='red', s=100, zorder=5, label=f'Operating Point (θ={threshold:.4f})')
+                ax.set_xlabel('Recall (Sensitivity)', fontsize=12)
+                ax.set_ylabel('Precision (PPV)', fontsize=12)
+                ax.set_title('Precision-Recall Curve', fontsize=14, fontweight='bold')
+                ax.legend(loc='best')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                mlflow.log_figure(fig, "precision_recall_curve.png")
+                plt.close(fig)
+                
+                # 3. ROC Curve
+                fpr, tpr, roc_thresholds = roc_curve(y_valid, y_valid_proba)
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(fpr, tpr, 'b-', linewidth=2, label=f'AUC-ROC: {roc_auc_score(y_valid, y_valid_proba):.4f}')
+                ax.plot([0, 1], [0, 1], 'r--', label='Random Classifier')
+                # Find operating point on ROC curve
+                current_fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+                current_tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
+                ax.scatter([current_fpr], [current_tpr], c='red', s=100, zorder=5, 
+                          label=f'Operating Point (θ={threshold:.4f})')
+                ax.set_xlabel('False Positive Rate', fontsize=12)
+                ax.set_ylabel('True Positive Rate (Recall)', fontsize=12)
+                ax.set_title('ROC Curve', fontsize=14, fontweight='bold')
+                ax.legend(loc='lower right')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                mlflow.log_figure(fig, "roc_curve.png")
+                plt.close(fig)
+                
+                # 4. Score Distribution
+                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # Histogram
+                axes[0].hist(y_valid_proba[y_valid == 0], bins=50, alpha=0.6, label='Legit', color='blue', density=True)
+                axes[0].hist(y_valid_proba[y_valid == 1], bins=50, alpha=0.6, label='Fraud', color='red', density=True)
+                axes[0].axvline(threshold, color='green', linestyle='--', linewidth=2, label=f'Threshold: {threshold:.4f}')
+                axes[0].set_xlabel('Fraud Probability', fontsize=12)
+                axes[0].set_ylabel('Density', fontsize=12)
+                axes[0].set_title('Score Distribution by Class', fontsize=13, fontweight='bold')
+                axes[0].legend()
+                axes[0].grid(True, alpha=0.3)
+                
+                # Box plot
+                plot_data = pd.DataFrame({
+                    'Score': y_valid_proba,
+                    'Class': ['Fraud' if y == 1 else 'Legit' for y in y_valid]
+                })
+                sns.boxplot(data=plot_data, x='Class', y='Score', ax=axes[1], palette={'Legit': 'blue', 'Fraud': 'red'})
+                axes[1].axhline(threshold, color='green', linestyle='--', linewidth=2, label=f'Threshold: {threshold:.4f}')
+                axes[1].set_ylabel('Fraud Probability', fontsize=12)
+                axes[1].set_title('Score Distribution Box Plot', fontsize=13, fontweight='bold')
+                axes[1].legend()
+                axes[1].grid(True, alpha=0.3, axis='y')
+                
+                plt.tight_layout()
+                mlflow.log_figure(fig, "score_distribution.png")
+                plt.close(fig)
+                
+                # 5. Threshold Analysis
+                thresholds_to_test = np.linspace(0.01, 0.99, 100)
+                precisions = []
+                recalls = []
+                f1_scores = []
+                
+                for t in thresholds_to_test:
+                    y_pred_t = (y_valid_proba >= t).astype(int)
+                    if y_pred_t.sum() > 0:  # Avoid division by zero
+                        precisions.append(precision_score(y_valid, y_pred_t, zero_division=0))
+                        recalls.append(recall_score(y_valid, y_pred_t, zero_division=0))
+                        f1_scores.append(f1_score(y_valid, y_pred_t, zero_division=0))
+                    else:
+                        precisions.append(0)
+                        recalls.append(0)
+                        f1_scores.append(0)
+                
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.plot(thresholds_to_test, precisions, 'b-', label='Precision', linewidth=2)
+                ax.plot(thresholds_to_test, recalls, 'r-', label='Recall', linewidth=2)
+                ax.plot(thresholds_to_test, f1_scores, 'g-', label='F1-Score', linewidth=2)
+                ax.axvline(threshold, color='purple', linestyle='--', linewidth=2, 
+                          label=f'Selected Threshold: {threshold:.4f}')
+                ax.set_xlabel('Threshold', fontsize=12)
+                ax.set_ylabel('Score', fontsize=12)
+                ax.set_title('Metrics vs Threshold', fontsize=14, fontweight='bold')
+                ax.legend(loc='best')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                mlflow.log_figure(fig, "threshold_analysis.png")
+                plt.close(fig)
+                
+                # 6. Feature Importance (if available)
+                if hasattr(model, 'feature_importances_'):
+                    # Get top 20 features
+                    feature_imp = pd.DataFrame({
+                        'feature': self.all_features,
+                        'importance': model.feature_importances_
+                    }).sort_values('importance', ascending=False).head(20)
+                    
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    sns.barplot(data=feature_imp, y='feature', x='importance', ax=ax, palette='viridis')
+                    ax.set_xlabel('Importance', fontsize=12)
+                    ax.set_ylabel('Feature', fontsize=12)
+                    ax.set_title('Top 20 Feature Importances', fontsize=14, fontweight='bold')
+                    plt.tight_layout()
+                    mlflow.log_figure(fig, "feature_importance.png")
+                    plt.close(fig)
+                    
+                    # Log feature importance as artifact
+                    feature_imp_full = pd.DataFrame({
+                        'feature': self.all_features,
+                        'importance': model.feature_importances_
+                    }).sort_values('importance', ascending=False)
+                    feature_imp_full.to_csv('/tmp/feature_importance.csv', index=False)
+                    mlflow.log_artifact('/tmp/feature_importance.csv')
+                
+                logger.info("  Successfully created and logged all visualizations")
+                
+            except Exception as e:
+                logger.warning(f"  Failed to create some visualizations: {str(e)}")
 
-            # Register model
-            mlflow.sklearn.log_model(
-                model,
-                "model",
-                registered_model_name=self.config["mlflow"]["registered_model_name"]
-            )
+            # ========== LOG CLASSIFICATION REPORT ==========
+            try:
+                report = classification_report(y_valid, y_valid_pred, output_dict=True)
+                # Log per-class metrics
+                mlflow.log_metric("legit_precision", float(report['0']['precision']))
+                mlflow.log_metric("legit_recall", float(report['0']['recall']))
+                mlflow.log_metric("legit_f1", float(report['0']['f1-score']))
+                mlflow.log_metric("fraud_precision", float(report['1']['precision']))
+                mlflow.log_metric("fraud_recall", float(report['1']['recall']))
+                mlflow.log_metric("fraud_f1", float(report['1']['f1-score']))
+            except Exception as e:
+                logger.warning(f"  Failed to log classification report: {str(e)}")
+
+            # ========== REGISTER MODEL ==========
+            try:
+                registered_name = self.config.get("mlflow", {}).get("registered_model_name", "fraud_detection_model")
+                # Ensure it's a string, not a list
+                if isinstance(registered_name, list):
+                    registered_name = registered_name[0] if registered_name else "fraud_detection_model"
+                
+                mlflow.sklearn.log_model(
+                    model,
+                    "model",
+                    registered_model_name=str(registered_name)
+                )
+                logger.info(f"  Model registered as: {registered_name}")
+            except Exception as e:
+                logger.warning(f"  Failed to register model: {str(e)}")
 
             logger.info(f"  Experiment logged to MLflow: {experiment_name}")
 
