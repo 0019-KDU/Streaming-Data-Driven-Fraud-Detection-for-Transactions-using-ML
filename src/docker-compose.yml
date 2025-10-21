@@ -321,7 +321,6 @@ services:
       --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres/mlflow
       --default-artifact-root s3://mlflow
       --gunicorn-opts "--timeout 300 --forwarded-allow-ips='*'"
-      --no-security-middleware
       --serve-artifacts
     networks:
       - fraud-detection
