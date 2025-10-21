@@ -261,6 +261,68 @@ class AdaptiveThresholdSystem:
 
         return np.clip(adjusted, self.min_threshold, self.max_threshold)
 
+    def get_hybrid_threshold(self, velocity_risk, amount_risk=0.0, 
+                            method='weighted', w1=0.6, w2=0.3, w3=0.1):
+        """
+        Hybrid threshold combining F1-optimal with risk-based adjustments
+        
+        Industry best practice: τ_hybrid = w₁·τ_A + w₂·τ_V + w₃·τ_Amount
+        
+        Args:
+            velocity_risk: 0-1 velocity risk score (high velocity = lower threshold)
+            amount_risk: 0-1 amount risk score (high amount = lower threshold)
+            method: Combination strategy
+                - 'weighted': Fixed weighted average (default)
+                - 'dynamic': Adaptive weights based on risk confidence
+                - 'max': Most conservative (highest threshold)
+                - 'min': Most aggressive (lowest threshold)
+            w1, w2, w3: Weights for adaptive, velocity, amount (sum to 1.0)
+        
+        Returns:
+            float: Hybrid threshold bounded by min/max thresholds
+        
+        Examples:
+            Low risk:  τ_hybrid = 0.42 (near F1-optimal)
+            High velocity: τ_hybrid = 0.32 (stricter detection)
+            High amount: τ_hybrid = 0.35 (stricter detection)
+        """
+        # Component thresholds
+        tau_A = self.current_threshold  # F1-optimal base (statistical)
+        tau_V = self.base_threshold - (velocity_risk * 0.15)  # Velocity-adjusted
+        tau_Amount = self.base_threshold - (amount_risk * 0.10)  # Amount-adjusted
+        
+        if method == 'max':
+            # Most conservative: Take highest threshold (hardest to flag fraud)
+            # Use when: False positives are very costly
+            tau = max(tau_A, tau_V, tau_Amount)
+            
+        elif method == 'min':
+            # Most aggressive: Take lowest threshold (easiest to flag fraud)
+            # Use when: False negatives are very costly
+            tau = min(tau_A, tau_V, tau_Amount)
+            
+        elif method == 'dynamic':
+            # Dynamic weights based on signal confidence
+            # High risk signals get more weight
+            if velocity_risk > 0.7:
+                # Trust velocity signal more
+                w1, w2, w3 = 0.3, 0.5, 0.2
+            elif amount_risk > 0.7:
+                # Trust amount signal more
+                w1, w2, w3 = 0.3, 0.2, 0.5
+            else:
+                # Trust F1-optimal statistical threshold
+                w1, w2, w3 = 0.6, 0.2, 0.2
+            
+            tau = w1 * tau_A + w2 * tau_V + w3 * tau_Amount
+            
+        else:  # 'weighted' (default)
+            # Fixed weighted average
+            tau = w1 * tau_A + w2 * tau_V + w3 * tau_Amount
+        
+        # Apply safety bounds
+        return np.clip(tau, self.min_threshold, self.max_threshold)
+
 
 # ==================== MAIN TRAINING CLASS ====================
 class IEEECISFraudTraining:
