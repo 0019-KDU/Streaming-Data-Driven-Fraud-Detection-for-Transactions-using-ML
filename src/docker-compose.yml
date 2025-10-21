@@ -314,7 +314,15 @@ services:
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-    command: mlflow server --port 5500 --host 0.0.0.0 --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres/mlflow --default-artifact-root s3://mlflow
+      # Security middleware configuration (MLflow 3.5+)
+      - MLFLOW_SERVER_ALLOWED_HOSTS=mlflow-server,localhost,127.0.0.1,64.23.228.115,172.18.*
+      - MLFLOW_SERVER_CORS_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,http://mlflow-server:*,http://64.23.228.115:*
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5500
+      --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres/mlflow
+      --default-artifact-root s3://mlflow
     networks:
       - fraud-detection
 
