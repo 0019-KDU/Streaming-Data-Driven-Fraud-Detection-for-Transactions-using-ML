@@ -178,6 +178,23 @@ class EnhancedFraudDetectionInference:
             self.config["model"]["feature_pipeline_path"]
         )
         
+        # Broadcast to workers
+        self.broadcast_model = self.spark.sparkContext.broadcast(self.model)
+        self.broadcast_pipeline = self.spark.sparkContext.broadcast(self.feature_pipeline)
+
+        # Load inference configuration
+        if self.model and 'adaptive_threshold_system' in self.model:
+            self.adaptive_threshold_system = self.model['adaptive_threshold_system']
+            self.threshold = self.adaptive_threshold_system.current_threshold
+            logger.info(f"✓ Using adaptive threshold from trained model: {self.threshold:.4f}")
+        else:
+            self.adaptive_threshold_system = None
+            self.threshold = self.config["inference"]["threshold"]
+            logger.info(f"Using fixed threshold from config: {self.threshold}")
+
+        self.risk_bands = self.config["inference"]["risk_bands"]
+        logger.info(f"Risk bands: HIGH={self.risk_bands['high']}, MEDIUM={self.risk_bands['medium']}")
+        
     def _check_mlflow_connectivity(self):
         """Check MLflow server connectivity and model availability"""
         if not self.config.get("mlflow", {}).get("tracking_uri"):
@@ -226,23 +243,6 @@ class EnhancedFraudDetectionInference:
         except Exception as e:
             logger.error(f"Error checking MLflow: {str(e)}")
             return False
-
-        # Broadcast to workers
-        self.broadcast_model = self.spark.sparkContext.broadcast(self.model)
-        self.broadcast_pipeline = self.spark.sparkContext.broadcast(self.feature_pipeline)
-
-        # Load inference configuration
-        if self.model and 'adaptive_threshold_system' in self.model:
-            self.adaptive_threshold_system = self.model['adaptive_threshold_system']
-            self.threshold = self.adaptive_threshold_system.current_threshold
-            logger.info(f"✓ Using adaptive threshold from trained model: {self.threshold:.4f}")
-        else:
-            self.adaptive_threshold_system = None
-            self.threshold = self.config["inference"]["threshold"]
-            logger.info(f"Using fixed threshold from config: {self.threshold}")
-
-        self.risk_bands = self.config["inference"]["risk_bands"]
-        logger.info(f"Risk bands: HIGH={self.risk_bands['high']}, MEDIUM={self.risk_bands['medium']}")
 
     @staticmethod
     def _load_config(config_path):
