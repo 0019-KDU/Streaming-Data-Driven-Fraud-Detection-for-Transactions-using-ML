@@ -1300,10 +1300,18 @@ class IEEECISFraudTraining:
                 if isinstance(registered_name, list):
                     registered_name = registered_name[0] if registered_name else "fraud_detection_model"
                 
+                # Create input example (avoid using list directly)
+                import pandas as pd
+                input_example = pd.DataFrame(
+                    np.zeros((1, len(self.all_features))), 
+                    columns=self.all_features
+                )
+                
                 mlflow.sklearn.log_model(
                     model,
                     "model",
-                    registered_model_name=str(registered_name)
+                    registered_model_name=str(registered_name),
+                    input_example=input_example
                 )
                 logger.info(f"  Model registered as: {registered_name}")
             except Exception as e:
