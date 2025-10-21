@@ -250,6 +250,8 @@ class IEEECISFraudTraining:
         # Set random seeds
         np.random.seed(RNG)
 
+        # Suppress Git warning for MLflow
+        os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
 
         # Set MLflow tracking URI
         mlflow.set_tracking_uri(self.config["mlflow"]["tracking_uri"])
@@ -1301,9 +1303,10 @@ class IEEECISFraudTraining:
                     registered_name = registered_name[0] if registered_name else "fraud_detection_model"
                 
                 # Create input example (avoid using list directly)
+                # Use float64 for all features to avoid integer missing value issues
                 import pandas as pd
                 input_example = pd.DataFrame(
-                    np.zeros((1, len(self.all_features))), 
+                    np.zeros((1, len(self.all_features)), dtype=np.float64), 
                     columns=self.all_features
                 )
                 
