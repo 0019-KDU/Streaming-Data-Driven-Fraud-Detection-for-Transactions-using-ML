@@ -6,6 +6,7 @@ mlflow:
   s3_endpoint_url: "http://minio:9000"
   bucket: "mlflow"
   model_stage: "Production"
+  
 
 kafka:
   bootstrap_servers: "pkc-921jm.us-east-2.aws.confluent.cloud:9092"
