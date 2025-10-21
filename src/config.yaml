@@ -1,10 +1,28 @@
 mlflow:
-  experiment_name: "fraud_detection"
+  # MLflow server configuration with fallback options
+  tracking_uri: 
+    - "http://mlflow-server:5500"  # Primary MLflow server
+    - "http://localhost:5000"      # Local fallback
+    - "http://127.0.0.1:5000"     # Another local option
   registered_model_name: "fraud_detection_xgboost"
-  tracking_uri: "http://mlflow-server:5500"
+  model_stage: "Production"        # Model stage to use
+  experiment_name: "fraud_detection"
+  
+  # S3/MinIO configuration for artifacts
   artifact_location: "s3://mlflow/fraud_detection"
   s3_endpoint_url: "http://minio:9000"
   bucket: "mlflow"
+  
+  # Fallback configuration
+  use_local_if_mlflow_fails: true
+  local_model_paths:
+    - "/app/models/fraud_detection_model.pkl"
+    - "models/fraud_detection_model.pkl"
+    - "../models/fraud_detection_model.pkl"
+  
+  # MLflow retry settings
+  max_retries: 3
+  retry_delay: 5  # seconds
 
 kafka:
   bootstrap_servers: "pkc-921jm.us-east-2.aws.confluent.cloud:9092"
@@ -48,13 +66,19 @@ model:
   path: "/app/models/fraud_detection_model.pkl"
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
 
-# Inference Configuration
+# Inference Configuration (No VAE)
 inference:
-  threshold: 0.6  # Base fraud probability threshold
+  threshold: 0.15  # Lowered base threshold (no VAE anomaly score)
   risk_bands:
-    high: 0.9     # >= 0.9 = HIGH risk
-    medium: 0.6   # >= 0.6 = MEDIUM risk
-    # < 0.6 = LOW risk
+    high: 0.30    # Adjusted for non-VAE predictions
+    medium: 0.15  # Adjusted for non-VAE predictions
+  # Rule-based flags will still catch high-risk transactions
+  rule_based_thresholds:
+    very_high_amount: 10000.0
+    very_low_amount: 1.0
+    high_velocity_score: 0.7
+    rapid_transactions_1h: 5
+    amount_spike_1h: 0.8
   sync_scoring_timeout_ms: 2000  # Timeout for synchronous scoring (optional feature)
 
 # Dashboard Configuration

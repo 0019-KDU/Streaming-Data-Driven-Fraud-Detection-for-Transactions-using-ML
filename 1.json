@@ -1,0 +1,31 @@
+{
+    "transaction_id": "USER_001",
+    "is_fraud": true/false,
+    "fraud_probability": 0.87,
+    "risk_level": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+    "action": "BLOCK" | "HOLD" | "APPROVE" | "APPROVE_MONITOR",
+    "recommendation": "Human-readable decision explanation",
+    "risk_factors": [
+        "List of identified risk factors"
+    ],
+    "scores": {
+        "model_probability": 0.87,
+        "velocity_risk": 0.76,
+        "vae_anomaly": 0.089,
+        "threshold_used": 0.10
+    },
+    "transaction_details": {
+        "amount": 8500.00,
+        "hour": 3,
+        "day_of_week": 0,
+        "is_weekend": false,
+        "is_night": true
+    },
+    "velocity_stats": {
+        "txn_1h": 15,
+        "amount_1h": 25000.00,
+        "txn_24h": 28,
+        "amount_24h": 48500.00
+    },
+    "processing_time_ms": 87
+}

@@ -1,25 +1,31 @@
 """
-Enhanced Real-time Fraud Detection Inference Pipeline - FIXED VERSION
+Enhanced Real-time Fraud Detection Inference Pipeline - NO VAE VERSION
 
-This version fixes all train/serve consistency issues:
+This version removes VAE components while preserving core functionality:
 1. Feature names match training exactly (dt_is_weekend, dt_is_night, email_risky, etc.)
-2. VAE anomaly scores are computed during inference
-3. Real amount values (not placeholders) are used
-4. Feature pipeline has proper transform() method
-5. Exception handling doesn't silently approve all transactions
+2. Real amount values are used (not placeholders)
+3. Feature pipeline has proper transform() method
+4. Exception handling doesn't silently approve transactions
+5. Enhanced risk assessment with:
+   - Velocity monitoring
+   - Rule-based detection
+   - Granular decision logic
 """
 
+# Standard library imports
 import logging
 import os
 import json
 from datetime import datetime
 
-import joblib
-import yaml
+# Third-party imports
 import numpy as np
 import pandas as pd
+import joblib
+import yaml
 from dotenv import load_dotenv
 
+# Spark imports
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     from_json, col, hour, dayofweek, dayofmonth,
@@ -58,6 +64,10 @@ class EnhancedFraudDetectionInference:
         load_dotenv(dotenv_path="/app/.env")
 
         self.config = self._load_config(config_path)
+        
+        # Check MLflow connectivity first
+        self._check_mlflow_connectivity()
+        
         self.spark = self._init_spark_session()
 
         # Load model and feature pipeline
@@ -65,6 +75,55 @@ class EnhancedFraudDetectionInference:
         self.feature_pipeline = self._load_feature_pipeline(
             self.config["model"]["feature_pipeline_path"]
         )
+        
+    def _check_mlflow_connectivity(self):
+        """Check MLflow server connectivity and model availability"""
+        if not self.config.get("mlflow", {}).get("tracking_uri"):
+            logger.warning("MLflow not configured, will use local models")
+            return False
+
+        try:
+            import mlflow
+            
+            # Try each tracking URI in order
+            tracking_uris = self.config["mlflow"]["tracking_uri"]
+            if isinstance(tracking_uris, str):
+                tracking_uris = [tracking_uris]
+                
+            for uri in tracking_uris:
+                try:
+                    mlflow.set_tracking_uri(uri)
+                    # Test connection by listing experiments
+                    mlflow.search_experiments()
+                    logger.info(f"✓ Connected to MLflow server at {uri}")
+                    
+                    # Check if our model exists
+                    model_name = self.config["mlflow"]["registered_model_name"]
+                    stage = self.config["mlflow"].get("model_stage", "Production")
+                    
+                    try:
+                        model_versions = mlflow.tracking.MlflowClient().get_latest_versions(model_name, stages=[stage])
+                        if model_versions:
+                            logger.info(f"✓ Found model {model_name} in stage {stage}")
+                            return True
+                        else:
+                            logger.warning(f"No {stage} version found for model {model_name}")
+                    except Exception as e:
+                        logger.warning(f"Could not verify model in MLflow: {str(e)}")
+                        
+                except Exception as e:
+                    logger.warning(f"Could not connect to MLflow at {uri}: {str(e)}")
+                    continue
+                    
+            logger.warning("Could not connect to any MLflow server, will use local models")
+            return False
+                
+        except ImportError:
+            logger.warning("MLflow package not available, will use local models")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking MLflow: {str(e)}")
+            return False
 
         # Broadcast to workers
         self.broadcast_model = self.spark.sparkContext.broadcast(self.model)
@@ -94,53 +153,56 @@ class EnhancedFraudDetectionInference:
             raise
 
     def _load_model(self, model_path):
-        """Load trained model and VAE models separately"""
+        """Load trained model bundle with MLflow fallback"""
         try:
-            if not os.path.exists(model_path):
-                logger.warning(f"Model not found at {model_path}, using fallback")
-                return None
-
-            # Load main model bundle
-            model_bundle = joblib.load(model_path)
-            logger.info(f"Model bundle loaded from {model_path}")
-
-            # Load VAE models separately if they exist
-            model_dir = os.path.dirname(model_path)
-            vae_dir = os.path.join(model_dir, "vae_models")
-
-            if os.path.exists(vae_dir):
+            # First try MLflow if configured
+            if self.config.get("mlflow", {}).get("tracking_uri"):
                 try:
-                    # Import TensorFlow only if VAE models exist
-                    import tensorflow as tf
-                    from tensorflow import keras
-                    # Import the training module to get VAE class
-                    import sys
-                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'dags'))
-                    from ieee_cis_training import VAE, Sampling
-
-                    vae_models = []
-                    n_vae_models = model_bundle.get('n_vae_models', 0)
-
-                    for i in range(n_vae_models):
-                        vae_path = os.path.join(vae_dir, f"vae_{i}.keras")
-                        if os.path.exists(vae_path):
-                            vae = keras.models.load_model(
-                                vae_path,
-                                custom_objects={'VAE': VAE, 'Sampling': Sampling}
-                            )
-                            vae_models.append(vae)
-                            logger.info(f"  VAE model {i+1} loaded from {vae_path}")
-
-                    # Add VAE models and scaler to bundle for inference
-                    model_bundle['vae_models'] = vae_models
-                    logger.info(f"  Loaded {len(vae_models)} VAE models successfully")
+                    import mlflow
+                    mlflow.set_tracking_uri(self.config["mlflow"]["tracking_uri"])
+                    
+                    # Try to load latest model from MLflow
+                    model_name = self.config["mlflow"]["registered_model_name"]
+                    stage = "Production"
+                    
+                    try:
+                        model_bundle = mlflow.pyfunc.load_model(f"models:/{model_name}/{stage}")
+                        logger.info(f"✓ Model loaded from MLflow: {model_name} ({stage})")
+                        return model_bundle
+                    except Exception as e:
+                        logger.warning(f"Could not load model from MLflow: {str(e)}")
+                        logger.warning("Falling back to local model file")
+                except ImportError:
+                    logger.warning("MLflow not available, falling back to local model file")
                 except Exception as e:
-                    logger.warning(f"  Could not load VAE models: {str(e)}")
-                    model_bundle['vae_models'] = []
-            else:
-                model_bundle['vae_models'] = []
+                    logger.warning(f"MLflow error: {str(e)}, falling back to local model file")
 
+            # Fallback to local file
+            if not os.path.exists(model_path):
+                # Try to find model in common locations
+                common_paths = [
+                    model_path,
+                    os.path.join(os.path.dirname(__file__), "models", "fraud_detection_model.pkl"),
+                    "/app/models/fraud_detection_model.pkl",
+                    "models/fraud_detection_model.pkl"
+                ]
+                
+                for path in common_paths:
+                    if os.path.exists(path):
+                        model_path = path
+                        break
+                else:
+                    logger.error("No model found in any location")
+                    return None
+
+            # Load local model bundle
+            model_bundle = joblib.load(model_path)
+            logger.info(f"✓ Model loaded from local file: {model_path}")
             return model_bundle
+
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            return None
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
             raise
@@ -461,28 +523,10 @@ class EnhancedFraudDetectionInference:
                     # Apply frequency encoding
                     input_transformed = pipeline.transform(input_df)
 
-                    # Compute VAE anomaly score if VAE models are available
-                    vae_models = model_bundle.get('vae_models', [])
-                    scaler = model_bundle.get('scaler')
-
-                    if vae_models and scaler:
-                        # Scale features for VAE
-                        features_for_vae = base_features.select_dtypes(include=[np.number]).fillna(0)
-                        features_scaled = scaler.transform(features_for_vae)
-
-                        # Compute reconstruction errors
-                        vae_scores = []
-                        for vae in vae_models:
-                            recon_error = vae.get_reconstruction_error(features_scaled)
-                            vae_scores.append(recon_error)
-
-                        # Average ensemble score
-                        vae_anomaly_score = np.mean(vae_scores, axis=0)
-                        input_transformed['vae_anomaly_score'] = vae_anomaly_score
-                    else:
-                        # If no VAE, set to 0
-                        if 'vae_anomaly_score' in pipeline.feature_names:
-                            input_transformed['vae_anomaly_score'] = 0.0
+                    # Enhanced risk assessment without VAE
+                    # Velocity-based patterns already captured above
+                    # Rule-based flags will catch obvious fraud patterns
+                    pass
                 else:
                     # Fallback: basic encoding
                     logger.warning("Pipeline transform not available, using fallback")
@@ -580,12 +624,6 @@ class EnhancedFraudDetectionInference:
                                 factors.append("rapid_transactions")
                             if 'amt_spike_1h' in input_df.columns and input_df.loc[input_df.index[i], 'amt_spike_1h'] > 0.8:
                                 factors.append("amount_spike")
-
-                        # VAE-based risk
-                        if 'vae_anomaly_score' in input_transformed.columns:
-                            vae_score = input_transformed.loc[input_transformed.index[i], 'vae_anomaly_score']
-                            if vae_score > input_transformed['vae_anomaly_score'].quantile(0.95):
-                                factors.append("anomalous_pattern")
 
                         # Rule-based flag indicator
                         if rule_based_flags[i]:
