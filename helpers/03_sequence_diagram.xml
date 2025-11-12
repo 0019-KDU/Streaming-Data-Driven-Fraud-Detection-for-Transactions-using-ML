@@ -1,0 +1,524 @@
+<mxfile host="app.diagrams.net" modified="2025-01-22T00:00:00.000Z" agent="draw.io" etag="sequence-fraud-v2" version="24.0.0" type="device">
+  <diagram name="Sequence Diagram - Fraud Detection Flow" id="sequence-fraud-detailed">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- Title -->
+        <mxCell id="title-seq" value="Sequence Diagram: Real-Time Fraud Detection Transaction Processing Flow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1a1a1a;" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="1400" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- Subtitle -->
+        <mxCell id="subtitle" value="End-to-End Transaction Flow from Client Submission to Final Classification and Notification" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="200" y="60" width="1400" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Actors/Components with detailed descriptions -->
+        <mxCell id="actor-client" value="Client/User" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fontSize=11;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="50" y="120" width="50" height="80" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-producer" value="Producer API&lt;br&gt;(FastAPI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="180" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-kafka" value="Apache Kafka&lt;br&gt;(Message Broker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="360" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-spark" value="Spark Streaming&lt;br&gt;(Consumer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="540" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-redis" value="Redis Cache&lt;br&gt;(Velocity Store)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-feature" value="Feature Pipeline&lt;br&gt;(75 Features)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="900" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-model" value="ML Model&lt;br&gt;(LightGBM)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-threshold" value="Adaptive Threshold&lt;br&gt;System" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-postgres" value="PostgreSQL&lt;br&gt;(Database)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="comp-notification" value="Notification&lt;br&gt;Service (Email)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="130" width="110" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- Lifelines -->
+        <mxCell id="lifeline-client" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="75" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-producer" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="235" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-kafka" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="415" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-spark" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="595" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-redis" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="775" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-feature" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="955" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-model" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1135" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-threshold" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1315" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-postgres" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1495" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="lifeline-notification" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;dashed=1;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1675" y="210" width="1" height="1100" as="geometry" />
+        </mxCell>
+        
+        <!-- Message Interactions -->
+        
+        <!-- Step 1: Client submits transaction -->
+        <mxCell id="msg-1" value="1: POST /submit_transaction" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#6c8ebf;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="75" y="240" as="sourcePoint" />
+            <mxPoint x="235" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-1" value="{transaction_data: TransactionID, Amount,&lt;br&gt;TransactionDT, card1-6, ProductCD, etc.}" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#e1f5fe;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="85" y="245" width="140" height="35" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 2: Validate payload -->
+        <mxCell id="msg-2" value="2: Validate Payload" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#666666;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="235" y="290" as="sourcePoint" />
+            <mxPoint x="255" y="290" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="270" y="290" />
+              <mxPoint x="270" y="315" />
+              <mxPoint x="255" y="315" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-2" value="Check required fields,&lt;br&gt;data types, ranges" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#f5f5f5;" vertex="1" parent="1">
+          <mxGeometry x="275" y="290" width="100" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 3: Generate Transaction ID -->
+        <mxCell id="msg-3" value="3: Generate Unique TransactionID" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#666666;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="235" y="330" as="sourcePoint" />
+            <mxPoint x="255" y="330" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="270" y="330" />
+              <mxPoint x="270" y="350" />
+              <mxPoint x="255" y="350" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Step 4: Publish to Kafka -->
+        <mxCell id="msg-4" value="4: Publish to 'transactions' Topic" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#9673a6;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="235" y="370" as="sourcePoint" />
+            <mxPoint x="415" y="370" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-4" value="Message queued in Kafka" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#f3e5f5;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="275" y="375" width="100" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 5: Return acknowledgment -->
+        <mxCell id="msg-5" value="5: Return ACK (202 Accepted)" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="235" y="405" as="sourcePoint" />
+            <mxPoint x="75" y="405" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-5" value="Transaction submitted successfully" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#e1f5fe;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="85" y="410" width="140" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Separator Line -->
+        <mxCell id="separator-1" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="50" y="445" width="1680" height="1" as="geometry" />
+        </mxCell>
+        <mxCell id="section-1" value="STREAM PROCESSING PHASE" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;fontColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="750" y="450" width="300" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 6: Spark consumes -->
+        <mxCell id="msg-6" value="6: Consume from Kafka (Micro-batch)" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#9673a6;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="415" y="490" as="sourcePoint" />
+            <mxPoint x="595" y="490" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-6" value="Pull transaction batch&lt;br&gt;(every 10 seconds)" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#f3e5f5;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="445" y="495" width="110" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 7: Query Redis for user history -->
+        <mxCell id="msg-7" value="7: Query User Historical Stats" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#d79b00;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="535" as="sourcePoint" />
+            <mxPoint x="775" y="535" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-7" value="user_id = card1 + addr1&lt;br&gt;+ P_emaildomain" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#fff4e6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="625" y="540" width="110" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 8: Return user statistics -->
+        <mxCell id="msg-8" value="8: Return User Stats" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="775" y="580" as="sourcePoint" />
+            <mxPoint x="595" y="580" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-8" value="{total_spent, avg_txn,&lt;br&gt;max_txn, std_txn, count}" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#fff4e6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="625" y="585" width="110" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 9: Query velocity windows -->
+        <mxCell id="msg-9" value="9: Query Velocity Windows" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#d79b00;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="625" as="sourcePoint" />
+            <mxPoint x="775" y="625" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-9" value="Get transactions in&lt;br&gt;1h, 6h, 24h, 7d windows" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#fff4e6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="625" y="630" width="110" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 10: Return velocity data -->
+        <mxCell id="msg-10" value="10: Return Velocity Data" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="775" y="670" as="sourcePoint" />
+            <mxPoint x="595" y="670" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-10" value="{txn_count, amount_sum,&lt;br&gt;amount_mean, velocity_risk}" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#fff4e6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="625" y="675" width="110" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Separator Line -->
+        <mxCell id="separator-2" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="50" y="715" width="1680" height="1" as="geometry" />
+        </mxCell>
+        <mxCell id="section-2" value="FEATURE ENGINEERING PHASE" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;fontColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="750" y="720" width="300" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 11: Invoke feature pipeline -->
+        <mxCell id="msg-11" value="11: Compute 75 Features" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#d6b656;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="760" as="sourcePoint" />
+            <mxPoint x="955" y="760" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-11" value="Pass transaction + Redis data" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#fffacd;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="725" y="765" width="110" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 12: Feature computation (self call) -->
+        <mxCell id="msg-12" value="12: Feature Computation" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#666666;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="955" y="800" as="sourcePoint" />
+            <mxPoint x="975" y="800" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="995" y="800" />
+              <mxPoint x="995" y="870" />
+              <mxPoint x="975" y="870" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-12" value="• Temporal (3 features)&lt;br&gt;• Velocity (27 features)&lt;br&gt;• Amount Agg (9 features)&lt;br&gt;• Frequency Enc (11)&lt;br&gt;• Mean Encoding (17)&lt;br&gt;• Basic (8 features)&lt;br&gt;= 75 features total" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#fffacd;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="805" width="140" height="90" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 13: Return feature vector -->
+        <mxCell id="msg-13" value="13: Return Feature Vector [75x1]" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="955" y="900" as="sourcePoint" />
+            <mxPoint x="595" y="900" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-13" value="Engineered features array" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#fffacd;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="725" y="905" width="110" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 14: Store transaction in Redis -->
+        <mxCell id="msg-14" value="14: Update Redis with New Transaction" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#d79b00;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="940" as="sourcePoint" />
+            <mxPoint x="775" y="940" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-14" value="Store for future&lt;br&gt;velocity calculations" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#fff4e6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="625" y="945" width="110" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 15: Redis ACK -->
+        <mxCell id="msg-15" value="15: ACK" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="775" y="980" as="sourcePoint" />
+            <mxPoint x="595" y="980" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Separator Line -->
+        <mxCell id="separator-3" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1015" width="1680" height="1" as="geometry" />
+        </mxCell>
+        <mxCell id="section-3" value="MODEL INFERENCE &amp; CLASSIFICATION PHASE" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;fontColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="750" y="1020" width="300" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 16: Load model -->
+        <mxCell id="msg-16" value="16: Load Calibrated Model" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#b85450;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="1060" as="sourcePoint" />
+            <mxPoint x="1135" y="1060" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-16" value="LightGBM + CalibratedClassifierCV" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#ffe0e0;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="825" y="1065" width="120" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 17: Predict probability -->
+        <mxCell id="msg-17" value="17: predict_proba(features)" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#b85450;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="1100" as="sourcePoint" />
+            <mxPoint x="1135" y="1100" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Step 18: Return fraud probability -->
+        <mxCell id="msg-18" value="18: Return Fraud Probability" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1135" y="1140" as="sourcePoint" />
+            <mxPoint x="595" y="1140" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-18" value="fraud_proba = 0.0523&lt;br&gt;(5.23% fraud probability)" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#ffe0e0;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="805" y="1145" width="140" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 19: Calculate adaptive threshold -->
+        <mxCell id="msg-19" value="19: Calculate Hybrid Threshold" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#d79b00;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="1190" as="sourcePoint" />
+            <mxPoint x="1315" y="1190" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-19" value="Pass velocity_risk, amount_risk" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#fff4e6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="905" y="1195" width="110" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 20: Threshold computation -->
+        <mxCell id="msg-20" value="20: Compute Threshold" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#666666;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1315" y="1230" as="sourcePoint" />
+            <mxPoint x="1335" y="1230" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1355" y="1230" />
+              <mxPoint x="1355" y="1275" />
+              <mxPoint x="1335" y="1275" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-20" value="τ = 0.6×τ_adaptive&lt;br&gt;  + 0.3×τ_velocity&lt;br&gt;  + 0.1×τ_amount&lt;br&gt;&lt;br&gt;Result: τ = 0.068" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#fff4e6;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1365" y="1230" width="120" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 21: Return threshold -->
+        <mxCell id="msg-21" value="21: Return Threshold = 0.068" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1315" y="1300" as="sourcePoint" />
+            <mxPoint x="595" y="1300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Step 22: Make classification decision -->
+        <mxCell id="msg-22" value="22: Classify Transaction" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#666666;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="1340" as="sourcePoint" />
+            <mxPoint x="615" y="1340" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="635" y="1340" />
+              <mxPoint x="635" y="1400" />
+              <mxPoint x="615" y="1400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-22" value="if fraud_proba &gt; threshold:&lt;br&gt;    classification = 'FRAUD'&lt;br&gt;else:&lt;br&gt;    classification = 'LEGITIMATE'&lt;br&gt;&lt;br&gt;0.0523 &lt; 0.068&lt;br&gt;→ LEGITIMATE" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#e8f5e9;strokeColor=#4caf50;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="645" y="1345" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Separator Line -->
+        <mxCell id="separator-4" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1435" width="1680" height="1" as="geometry" />
+        </mxCell>
+        <mxCell id="section-4" value="PERSISTENCE &amp; ROUTING PHASE" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;fontColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="750" y="1440" width="300" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 23: Save to PostgreSQL -->
+        <mxCell id="msg-23" value="23: Save Transaction + Prediction" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#82b366;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="1480" as="sourcePoint" />
+            <mxPoint x="1495" y="1480" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-23" value="INSERT INTO transactions&lt;br&gt;and predictions tables" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#e8f5e9;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="995" y="1485" width="120" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 24: DB ACK -->
+        <mxCell id="msg-24" value="24: ACK (Record Saved)" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1495" y="1525" as="sourcePoint" />
+            <mxPoint x="595" y="1525" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Step 25: Route to output topic -->
+        <mxCell id="msg-25" value="25: Publish to Output Topic" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#9673a6;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="595" y="1565" as="sourcePoint" />
+            <mxPoint x="415" y="1565" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-25" value="topic: 'legit_predictions'&lt;br&gt;{transaction_id, probability,&lt;br&gt;classification, threshold}" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#f3e5f5;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="425" y="1570" width="150" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- Alternative Frame for Fraud Case -->
+        <mxCell id="alt-frame" value="alt" style="shape=umlFrame;whiteSpace=wrap;html=1;width=60;height=30;fillColor=#fff8e1;strokeColor=#ff9800;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="1625" width="1390" height="140" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="condition-fraud" value="[if classification == 'FRAUD']" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2;fontColor=#ff6d00;" vertex="1" parent="1">
+          <mxGeometry x="430" y="1635" width="180" height="20" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 26: Consume fraud alert -->
+        <mxCell id="msg-26" value="26: Consume from 'fraud_predictions'" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#b85450;fontStyle=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="415" y="1670" as="sourcePoint" />
+            <mxPoint x="1675" y="1670" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-26" value="Notification service reads&lt;br&gt;fraud events" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fillColor=#ffe0e0;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="985" y="1675" width="120" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Step 27: Send email alert -->
+        <mxCell id="msg-27" value="27: Send Email Alert" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1675" y="1715" as="sourcePoint" />
+            <mxPoint x="1695" y="1715" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1720" y="1715" />
+              <mxPoint x="1720" y="1745" />
+              <mxPoint x="1695" y="1745" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-27" value="SMTP email notification&lt;br&gt;to fraud analysts" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;fillColor=#ffe0e0;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1575" y="1720" width="100" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Separator after alt frame -->
+        <mxCell id="separator-5" value="" style="line;strokeWidth=2;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1780" width="1680" height="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Processing time annotation -->
+        <mxCell id="time-annotation" value="⏱ Total Processing Time" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#e3f2fd;strokeColor=#1976d2;fontSize=11;fontStyle=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1800" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="time-details" value="• Feature Engineering: 50-100ms&lt;br&gt;• Model Prediction: 5-15ms&lt;br&gt;• Total Latency: 55-115ms" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1855" width="200" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- Key Metrics Box -->
+        <mxCell id="metrics-box" value="📊 Key Metrics" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontSize=11;fontStyle=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1800" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="metrics-details" value="• Throughput: 1000+ txn/sec&lt;br&gt;• Accuracy (AUC-PR): 0.3577&lt;br&gt;• Features Engineered: 75" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1855" width="200" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- Technology Stack Box -->
+        <mxCell id="tech-box" value="🔧 Technology Stack" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;fontStyle=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="510" y="1800" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tech-details" value="• Kafka: Stream Processing&lt;br&gt;• Spark: Distributed Computing&lt;br&gt;• Redis: In-Memory Cache&lt;br&gt;• LightGBM: ML Model&lt;br&gt;• PostgreSQL: Persistence" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fillColor=#e8f5e9;strokeColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="510" y="1855" width="220" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Legend -->
+        <mxCell id="legend-title" value="Legend:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="1800" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-sync" value="" style="endArrow=classic;html=1;fontSize=10;strokeWidth=2;strokeColor=#000000;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1400" y="1835" as="sourcePoint" />
+            <mxPoint x="1450" y="1835" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend-sync-label" value="Synchronous Call" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="1825" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-async" value="" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#000000;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1400" y="1865" as="sourcePoint" />
+            <mxPoint x="1450" y="1865" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend-async-label" value="Asynchronous Return" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="1855" width="120" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-self" value="" style="endArrow=classic;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#666666;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1400" y="1895" as="sourcePoint" />
+            <mxPoint x="1420" y="1895" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1420" y="1895" />
+              <mxPoint x="1420" y="1905" />
+              <mxPoint x="1410" y="1905" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend-self-label" value="Self Call (Internal)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="1885" width="100" height="20" as="geometry" />
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
