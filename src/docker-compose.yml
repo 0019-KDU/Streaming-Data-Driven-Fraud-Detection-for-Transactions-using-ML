@@ -79,6 +79,7 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
+    image: airflow-webserver:latest
     command: webserver
     ports:
       - "8080:8080"
@@ -98,6 +99,7 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
+    image: airflow-scheduler:latest
     command: scheduler
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
@@ -115,6 +117,7 @@ services:
 
   airflow-worker:
     <<: *airflow-common
+    image: airflow-worker:latest
     command: celery worker
     healthcheck:
       # yamllint disable rule:line-length
@@ -143,6 +146,7 @@ services:
 
   airflow-triggerer:
     <<: *airflow-common
+    image: airflow-triggerer:latest
     command: triggerer
     healthcheck:
       test:
@@ -164,6 +168,7 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    image: airflow-init:latest
     entrypoint: /bin/bash
     # yamllint disable rule:line-length
     command:
@@ -230,6 +235,7 @@ services:
 
   airflow-cli:
     <<: *airflow-common
+    image: airflow-cli:latest
     profiles:
       - debug
     environment:
@@ -244,6 +250,7 @@ services:
       - fraud-detection
   flower:
     <<: *airflow-common
+    image: airflow-flower:latest
     command: celery flower
     profiles:
       - flower
