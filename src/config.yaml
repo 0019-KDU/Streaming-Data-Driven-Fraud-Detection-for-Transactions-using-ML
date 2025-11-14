@@ -37,7 +37,7 @@ training:
   smote_sampling_strategy: 0.6  # 60% of majority class (creates ~40% fraud in resampled data)
   
   # 🆕 PHASE 2 & 3: Advanced Techniques for 96%+ AUC (Top 5% Kaggle)
-  use_forward_feature_selection: true  # 🔥 BIGGEST GAIN: +5-8% AUC (reduces 75 → 50 features)
+  use_forward_feature_selection: false  # 🔥 DISABLED: Was reducing features too aggressively (45→12)
   ffs_max_features: 50  # Stop FFS after 50 features
   use_randomized_search: false  # ⚠️ SLOW: Takes 30-60 min, +2-4% AUC (enable for final tuning)
   random_search_iterations: 100  # 100 random hyperparameter combinations
