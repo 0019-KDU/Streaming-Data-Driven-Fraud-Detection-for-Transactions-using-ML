@@ -695,34 +695,38 @@ class IEEECISFraudTraining:
         y_train: pd.Series,
         X_valid: pd.DataFrame,
         y_valid: pd.Series,
-        n_iter: int = 100
+        n_iter: int = 10
     ) -> Tuple[Any, Dict]:
         """
         🆕 PHASE 3 IMPROVEMENT #2: RandomizedSearchCV (+2-4% AUC)
-        
-        Tests 100+ random hyperparameter combinations to find optimal settings.
-        Your current params work for Project 2's data, but YOUR data might prefer different values.
+
+        Tests random hyperparameter combinations to find optimal settings.
+
+        OPTIMIZED VERSION:
+        - Reduced n_estimators range (500-1500 instead of 500-3000)
+        - Uses cv=2 instead of cv=3 for 33% speedup
+        - Default n_iter=10 for ~15-20 min runtime (was 100+ taking 2-3 hours)
         """
         logger.info(f"🔍 Starting RandomizedSearchCV ({n_iter} iterations)...")
-        
+
         from sklearn.model_selection import RandomizedSearchCV
         from scipy.stats import randint, uniform
         from lightgbm import LGBMClassifier
-        
-        # Parameter search space
+
+        # ⚡ OPTIMIZED: Reduced search space for faster training
         param_distributions = {
-            'n_estimators': randint(500, 3000),
-            'learning_rate': uniform(0.005, 0.095),  # 0.005 to 0.1
-            'max_depth': randint(3, 10),
-            'num_leaves': randint(15, 127),
-            'min_child_samples': randint(20, 200),
-            'subsample': uniform(0.6, 0.4),  # 0.6 to 1.0
-            'colsample_bytree': uniform(0.6, 0.4),  # 0.6 to 1.0
-            'reg_alpha': uniform(0.0, 5.0),
-            'reg_lambda': uniform(0.0, 10.0),
-            'min_child_weight': uniform(0.001, 0.5)
+            'n_estimators': randint(500, 1500),      # ⚡ Reduced from 3000 (2x faster)
+            'learning_rate': uniform(0.01, 0.09),    # 0.01 to 0.1
+            'max_depth': randint(4, 8),              # ⚡ Narrowed from 3-10
+            'num_leaves': randint(31, 95),           # ⚡ Narrowed from 15-127
+            'min_child_samples': randint(50, 150),   # ⚡ Narrowed from 20-200
+            'subsample': uniform(0.7, 0.3),          # 0.7 to 1.0
+            'colsample_bytree': uniform(0.7, 0.3),   # 0.7 to 1.0
+            'reg_alpha': uniform(0.0, 3.0),          # ⚡ Reduced from 5.0
+            'reg_lambda': uniform(1.0, 7.0),         # 1.0 to 8.0
+            'min_child_weight': uniform(0.05, 0.3)   # ⚡ Narrowed range
         }
-        
+
         # Base model
         base_model = LGBMClassifier(
             class_weight='balanced',
@@ -732,41 +736,41 @@ class IEEECISFraudTraining:
             n_jobs=-1,
             verbose=-1
         )
-        
-        # RandomizedSearchCV
+
+        # ⚡ OPTIMIZED: cv=2 instead of cv=3 for 33% speedup
         random_search = RandomizedSearchCV(
             estimator=base_model,
             param_distributions=param_distributions,
             n_iter=n_iter,
             scoring='average_precision',  # AUC-PR for imbalanced data
-            cv=3,
+            cv=2,  # ⚡ Reduced from 3 for 33% speedup
             random_state=RNG,
-            n_jobs=-1,
+            n_jobs=1,  # ⚡ Changed from -1 to avoid Airflow multiprocessing conflicts
             verbose=2
         )
-        
-        logger.info(f"  Training {n_iter} random configurations...")
-        logger.info(f"  This will take 30-60 minutes...")
-        
+
+        logger.info(f"  Training {n_iter} random configurations with 2-fold CV...")
+        logger.info(f"  Estimated time: ~15-20 minutes (optimized from 2-3 hours)")
+
         # Fit
         random_search.fit(X_train, y_train)
-        
+
         # Best model
         best_model = random_search.best_estimator_
         best_params = random_search.best_params_
-        
+
         # Validate
         y_valid_proba = best_model.predict_proba(X_valid)[:, 1]
         auc_pr = average_precision_score(y_valid, y_valid_proba)
         auc_roc = roc_auc_score(y_valid, y_valid_proba)
-        
+
         logger.info(f"\n✅ RandomizedSearchCV COMPLETE!")
         logger.info(f"   Best AUC-PR: {auc_pr:.4f}")
         logger.info(f"   Best AUC-ROC: {auc_roc:.4f}")
         logger.info(f"   Best parameters:")
         for param, value in best_params.items():
             logger.info(f"     {param}: {value}")
-        
+
         return best_model, best_params
 
     def calculate_velocity_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -935,44 +939,96 @@ class IEEECISFraudTraining:
         valid_df: pd.DataFrame
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Apply mean/target encoding (fraud rate) to categorical variables
-        
-        This encodes each category with its fraud rate from training data.
-        More powerful than frequency encoding for fraud detection.
+        Apply mean/target encoding (fraud rate) with K-Fold CV to prevent data leakage
+
+        Uses 5-fold cross-validation on training data to encode categories with their
+        out-of-fold fraud rates. This prevents the model from "seeing" the target directly.
+
+        Industry best practice for target encoding in fraud detection.
         """
-        logger.info("Applying mean encoding (fraud rate)...")
-        
+        logger.info("Applying mean encoding (fraud rate) with K-Fold CV to prevent leakage...")
+
+        # Check if CV target encoding is enabled
+        use_cv = self.config.get("training", {}).get("use_cv_target_encoding", True)
+
         # Columns to mean encode
         mean_encode_cols = ['P_emaildomain', 'R_emaildomain', 'DeviceInfo', 'DeviceType',
                            'card4', 'card6', 'ProductCD']
-        
+
         # Add id columns if they exist
         id_cols = [f'id_{i}' for i in [12, 15, 16, 23, 27, 28, 29, 30, 31, 33, 34, 35, 36, 37, 38]]
         mean_encode_cols.extend([c for c in id_cols if c in train_df.columns])
-        
+
         mean_encode_cols = [c for c in mean_encode_cols if c in train_df.columns]
-        
-        # Fit on train
-        self.mean_maps = {}
+
+        # Global fraud rate for smoothing
         global_fraud_rate = train_df['isFraud'].mean()
-        
-        for col in mean_encode_cols:
-            # Fill missing values
-            train_df[col] = train_df[col].fillna('missing')
-            valid_df[col] = valid_df[col].fillna('missing')
-            
-            # Calculate fraud rate per category
-            fraud_rate = train_df.groupby(col)['isFraud'].mean().to_dict()
-            self.mean_maps[col] = fraud_rate
-            
-            # Apply to train (with smoothing to prevent overfitting)
-            train_df[col + '_fraud_rate'] = train_df[col].map(fraud_rate).fillna(global_fraud_rate).astype('float32')
-            
-            # Apply to valid (unknown categories get global rate)
-            valid_df[col + '_fraud_rate'] = valid_df[col].map(fraud_rate).fillna(global_fraud_rate).astype('float32')
-        
-        logger.info(f"  Mean encoded {len(mean_encode_cols)} columns with fraud rates")
-        
+        smoothing = 10  # Smoothing parameter (higher = more regularization)
+
+        # Store encoding maps for validation/inference
+        self.mean_maps = {}
+
+        if use_cv:
+            # K-Fold CV-based target encoding (prevents leakage)
+            from sklearn.model_selection import KFold
+
+            logger.info("  Using 5-fold CV target encoding (prevents overfitting)")
+            n_splits = 5
+            kf = KFold(n_splits=n_splits, shuffle=False, random_state=RNG)  # shuffle=False for time-series
+
+            for col in mean_encode_cols:
+                # Fill missing values
+                train_df[col] = train_df[col].fillna('missing')
+                valid_df[col] = valid_df[col].fillna('missing')
+
+                # Initialize encoded column
+                train_df[col + '_fraud_rate'] = global_fraud_rate
+
+                # K-Fold encoding on training data
+                for train_idx, val_idx in kf.split(train_df):
+                    # Calculate fraud rate on train fold only
+                    train_fold = train_df.iloc[train_idx]
+                    val_fold = train_df.iloc[val_idx]
+
+                    # Calculate smoothed fraud rate per category
+                    agg = train_fold.groupby(col)['isFraud'].agg(['sum', 'count'])
+                    agg['fraud_rate'] = (agg['sum'] + global_fraud_rate * smoothing) / (agg['count'] + smoothing)
+
+                    # Map to validation fold (out-of-fold encoding)
+                    train_df.loc[val_idx, col + '_fraud_rate'] = val_fold[col].map(agg['fraud_rate']).fillna(global_fraud_rate)
+
+                # Calculate final encoding map on full training data (for validation/inference)
+                agg_full = train_df.groupby(col)['isFraud'].agg(['sum', 'count'])
+                agg_full['fraud_rate'] = (agg_full['sum'] + global_fraud_rate * smoothing) / (agg_full['count'] + smoothing)
+                self.mean_maps[col] = agg_full['fraud_rate'].to_dict()
+
+                # Apply to validation data
+                valid_df[col + '_fraud_rate'] = valid_df[col].map(self.mean_maps[col]).fillna(global_fraud_rate).astype('float32')
+
+                # Cast training column to float32
+                train_df[col + '_fraud_rate'] = train_df[col + '_fraud_rate'].astype('float32')
+
+            logger.info(f"  ✅ K-Fold CV encoded {len(mean_encode_cols)} columns (leakage-free)")
+
+        else:
+            # Fallback: Simple mean encoding (faster but has leakage risk)
+            logger.warning("  ⚠️  Using simple mean encoding (may cause overfitting)")
+
+            for col in mean_encode_cols:
+                # Fill missing values
+                train_df[col] = train_df[col].fillna('missing')
+                valid_df[col] = valid_df[col].fillna('missing')
+
+                # Calculate smoothed fraud rate per category
+                agg = train_df.groupby(col)['isFraud'].agg(['sum', 'count'])
+                agg['fraud_rate'] = (agg['sum'] + global_fraud_rate * smoothing) / (agg['count'] + smoothing)
+                fraud_rate = agg['fraud_rate'].to_dict()
+                self.mean_maps[col] = fraud_rate
+
+                # Apply to train and validation
+                train_df[col + '_fraud_rate'] = train_df[col].map(fraud_rate).fillna(global_fraud_rate).astype('float32')
+                valid_df[col + '_fraud_rate'] = valid_df[col].map(fraud_rate).fillna(global_fraud_rate).astype('float32')
+
         return train_df, valid_df
 
     def select_all_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
