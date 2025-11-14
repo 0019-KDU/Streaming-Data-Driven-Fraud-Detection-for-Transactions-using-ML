@@ -182,8 +182,7 @@ This DAG trains a fraud detection model on the IEEE-CIS dataset.
      * Email risk indicators
      * Temporal patterns
    - Chronological train/validation split (80/20)
-   - Train VAE ensemble (3 models) for anomaly detection
-   - Train gradient boosting model (XGBoost/LightGBM/CatBoost) with GPU support
+    - Train gradient boosting model (XGBoost/LightGBM/CatBoost) with GPU support
    - Calibrate probabilities
    - Initialize adaptive threshold system
    - Log to MLflow

@@ -1,14 +1,14 @@
 """
 IEEE-CIS Fraud Detection Training Module - FULL ML TRAINING
 
-This module includes all advanced features from research notebook:
-- VAE Ensemble (3 models) for anomaly detection
-- Velocity Features (optimized time-windows: 1h, 6h, 24h, 7d)
-- Adaptive Threshold System with dynamic adjustment
-- Frequency Encoding for categorical variables
-- 60+ Advanced Features for maximum performance
-- GPU support for training acceleration
-- MLflow experiment tracking and model registry
+- This module includes advanced features from research notebook (VAE removed):
+    - Velocity Features (optimized time-windows: 1h, 6h, 24h, 7d)
+    - Adaptive Threshold System with dynamic adjustment
+    - Frequency Encoding for categorical variables
+    - 60+ Advanced Features for maximum performance
+    - GPU support for training acceleration
+    - MLflow experiment tracking and model registry
+
 """
 
 import os
@@ -55,16 +55,9 @@ try:
 except ImportError:
     CatBoostClassifier = None
 
-# Deep Learning for VAE
-try:
-    import tensorflow as tf
-    from tensorflow import keras
-    from tensorflow.keras import layers, Model
-    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-    TF_AVAILABLE = True
-except ImportError:
-    TF_AVAILABLE = False
-    logging.warning("TensorFlow not available. VAE ensemble will be disabled.")
+# VAE ensemble removed: TensorFlow/VAE code is no longer used in the pipeline
+TF_AVAILABLE = False
+logging.info("VAE ensemble removed from training pipeline.")
 
 # Configure logging
 logging.basicConfig(
@@ -81,113 +74,7 @@ RISKY_DOMAINS = {
 }
 
 
-# ==================== VAE ARCHITECTURE ====================
-if TF_AVAILABLE:
-    class Sampling(layers.Layer):
-        """Reparameterization trick for VAE"""
-        def call(self, inputs):
-            z_mean, z_log_var = inputs
-            batch = tf.shape(z_mean)[0]
-            dim = tf.shape(z_mean)[1]
-            epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
-            return z_mean + tf.exp(0.5 * z_log_var) * epsilon
-
-    class VAE(Model):
-        """Variational Autoencoder for anomaly detection"""
-        def __init__(self, input_dim, latent_dim=16, **kwargs):
-            super(VAE, self).__init__(**kwargs)
-            self.input_dim = input_dim
-            self.latent_dim = latent_dim
-
-            # Encoder
-            self.encoder = self.build_encoder()
-
-            # Decoder
-            self.decoder = self.build_decoder()
-
-            # Metrics
-            self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
-            self.reconstruction_loss_tracker = keras.metrics.Mean(name="recon_loss")
-            self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
-
-        def build_encoder(self):
-            encoder_inputs = keras.Input(shape=(self.input_dim,))
-            x = layers.Dense(128, activation="relu")(encoder_inputs)
-            x = layers.BatchNormalization()(x)
-            x = layers.Dropout(0.2)(x)
-            x = layers.Dense(64, activation="relu")(x)
-            x = layers.BatchNormalization()(x)
-            x = layers.Dropout(0.2)(x)
-            x = layers.Dense(32, activation="relu")(x)
-
-            z_mean = layers.Dense(self.latent_dim, name="z_mean")(x)
-            z_log_var = layers.Dense(self.latent_dim, name="z_log_var")(x)
-            z = Sampling()([z_mean, z_log_var])
-
-            return Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
-
-        def build_decoder(self):
-            latent_inputs = keras.Input(shape=(self.latent_dim,))
-            x = layers.Dense(32, activation="relu")(latent_inputs)
-            x = layers.BatchNormalization()(x)
-            x = layers.Dense(64, activation="relu")(x)
-            x = layers.BatchNormalization()(x)
-            x = layers.Dense(128, activation="relu")(x)
-            decoder_outputs = layers.Dense(self.input_dim, activation="linear")(x)
-
-            return Model(latent_inputs, decoder_outputs, name="decoder")
-
-        def call(self, inputs):
-            z_mean, z_log_var, z = self.encoder(inputs)
-            reconstruction = self.decoder(z)
-            return reconstruction
-
-        def train_step(self, data):
-            with tf.GradientTape() as tape:
-                z_mean, z_log_var, z = self.encoder(data)
-                reconstruction = self.decoder(z)
-
-                # Reconstruction loss
-                reconstruction_loss = tf.reduce_mean(
-                    tf.reduce_sum(tf.square(data - reconstruction), axis=1)
-                )
-
-                # KL divergence
-                kl_loss = -0.5 * tf.reduce_mean(
-                    tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1)
-                )
-
-                total_loss = reconstruction_loss + kl_loss
-
-            grads = tape.gradient(total_loss, self.trainable_weights)
-            self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
-
-            self.total_loss_tracker.update_state(total_loss)
-            self.reconstruction_loss_tracker.update_state(reconstruction_loss)
-            self.kl_loss_tracker.update_state(kl_loss)
-
-            return {
-                "total_loss": self.total_loss_tracker.result(),
-                "recon_loss": self.reconstruction_loss_tracker.result(),
-                "kl_loss": self.kl_loss_tracker.result(),
-            }
-
-        @property
-        def metrics(self):
-            return [
-                self.total_loss_tracker,
-                self.reconstruction_loss_tracker,
-                self.kl_loss_tracker,
-            ]
-
-        def get_reconstruction_error(self, X):
-            """Calculate reconstruction error for anomaly detection"""
-            z_mean, z_log_var, z = self.encoder(X)
-            reconstruction = self.decoder(z)
-            reconstruction_error = tf.reduce_mean(
-                tf.square(X - reconstruction), axis=1
-            )
-            return reconstruction_error.numpy()
+# VAE ensemble has been removed from the pipeline. No VAE architecture is defined.
 
 
 # ==================== ADAPTIVE THRESHOLD SYSTEM ====================
@@ -676,84 +563,7 @@ class IEEECISFraudTraining:
 
         return X, y
 
-    def train_vae_ensemble(
-        self,
-        X_train: pd.DataFrame,
-        y_train: pd.Series,
-        X_valid: pd.DataFrame,
-        n_vaes: int = 3
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Train ensemble of VAEs for anomaly detection
-
-        Trains only on normal transactions (semi-supervised)
-        """
-        if not TF_AVAILABLE:
-            logger.warning("TensorFlow not available. Skipping VAE training.")
-            return np.zeros(len(X_train)), np.zeros(len(X_valid))
-
-        logger.info(f"Training VAE ensemble ({n_vaes} models)...")
-
-        # Scale features
-        self.scaler = RobustScaler()
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_valid_scaled = self.scaler.transform(X_valid)
-
-        # Train on normal transactions only
-        X_train_normal = X_train_scaled[y_train == 0]
-        logger.info(f"  Training on {len(X_train_normal):,} normal transactions")
-
-        self.vae_models = []
-        vae_histories = []
-
-        for i in range(n_vaes):
-            logger.info(f"  Training VAE {i+1}/{n_vaes}...")
-
-            vae = VAE(input_dim=X_train_scaled.shape[1], latent_dim=16)
-            vae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001))
-
-            # Use 'loss' instead of 'total_loss' for Keras 3.x compatibility
-            callbacks = [
-                EarlyStopping(monitor='loss', mode='min', patience=10, restore_best_weights=True, verbose=0),
-                ReduceLROnPlateau(monitor='loss', mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=0)
-            ]
-
-            history = vae.fit(
-                X_train_normal,
-                epochs=50,
-                batch_size=256,
-                callbacks=callbacks,
-                verbose=0
-            )
-
-            self.vae_models.append(vae)
-            vae_histories.append(history)
-
-            # Get final loss (use 'loss' for Keras 3.x compatibility)
-            final_loss = history.history.get('loss', history.history.get('total_loss', [0]))[-1]
-            logger.info(f"    Final loss: {final_loss:.4f}")
-
-        logger.info("  VAE ensemble training complete")
-
-        # Calculate reconstruction errors
-        logger.info("  Calculating VAE anomaly scores...")
-        train_vae_scores = []
-        valid_vae_scores = []
-
-        for vae in self.vae_models:
-            train_recon_error = vae.get_reconstruction_error(X_train_scaled)
-            valid_recon_error = vae.get_reconstruction_error(X_valid_scaled)
-
-            train_vae_scores.append(train_recon_error)
-            valid_vae_scores.append(valid_recon_error)
-
-        # Ensemble average
-        train_vae_score = np.mean(train_vae_scores, axis=0)
-        valid_vae_score = np.mean(valid_vae_scores, axis=0)
-
-        logger.info(f"  VAE scores - Train mean: {train_vae_score.mean():.4f}, Valid mean: {valid_vae_score.mean():.4f}")
-
-        return train_vae_score, valid_vae_score
+    # VAE ensemble was removed; no train_vae_ensemble implementation
 
     def train_boosting_model(
         self,
@@ -1034,19 +844,10 @@ class IEEECISFraudTraining:
         model_dir = os.path.dirname(model_path)
         os.makedirs(model_dir, exist_ok=True)
 
-        # Save VAE models separately using Keras format (NOT in joblib pickle)
-        if TF_AVAILABLE and self.vae_models:
-            vae_dir = os.path.join(model_dir, "vae_models")
-            os.makedirs(vae_dir, exist_ok=True)
-            for i, vae in enumerate(self.vae_models):
-                vae_path = os.path.join(vae_dir, f"vae_{i}.keras")
-                vae.save(vae_path)
-                logger.info(f"  VAE model {i+1} saved to: {vae_path}")
-
-        # Save main artifact bundle WITHOUT VAE models (just metadata)
+        # Save main artifact bundle (VAE removed)
         artifact_bundle = {
             'calibrated_model': model,
-            'n_vae_models': len(self.vae_models) if TF_AVAILABLE else 0,
+            'n_vae_models': 0,
             'scaler': self.scaler,
             'freq_maps': self.freq_maps,
             'feature_names': self.all_features,
@@ -1084,7 +885,7 @@ class IEEECISFraudTraining:
             # Log parameters
             mlflow.log_param("model_type", "EnhancedEnsemble")
             mlflow.log_param("n_features", len(self.all_features))
-            mlflow.log_param("n_vae_models", len(self.vae_models))
+            mlflow.log_param("n_vae_models", 0)
             mlflow.log_param("base_threshold", threshold)
             mlflow.log_param("velocity_features", "enabled")
             mlflow.log_param("adaptive_threshold", "enabled")
@@ -1159,15 +960,7 @@ class IEEECISFraudTraining:
         logger.info(f"  X_train: {X_train.shape}")
         logger.info(f"  X_valid: {X_valid.shape}")
 
-        # Train VAE ensemble
-        if TF_AVAILABLE:
-            train_vae_score, valid_vae_score = self.train_vae_ensemble(
-                X_train, y_train, X_valid, n_vaes=3
-            )
-            X_train['vae_anomaly_score'] = train_vae_score
-            X_valid['vae_anomaly_score'] = valid_vae_score
-            self.all_features.append('vae_anomaly_score')
-            logger.info(f"  VAE anomaly score added to features (Total: {len(self.all_features)})")
+        # VAE ensemble removed: no anomaly score added
 
         # Train gradient boosting
         model = self.train_boosting_model(X_train, y_train, X_valid, y_valid)
@@ -1205,7 +998,7 @@ class IEEECISFraudTraining:
             "f1_score": f1_score(y_valid, y_valid_pred),
             "threshold": self.best_threshold,
             "n_features": len(self.all_features),
-            "n_vae_models": len(self.vae_models),
+            "n_vae_models": 0,
             "train_samples": len(y_train),
             "valid_samples": len(y_valid)
         }
