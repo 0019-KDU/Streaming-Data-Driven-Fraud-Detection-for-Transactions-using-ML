@@ -974,7 +974,7 @@ class IEEECISFraudTraining:
 
             logger.info("  Using 5-fold CV target encoding (prevents overfitting)")
             n_splits = 5
-            kf = KFold(n_splits=n_splits, shuffle=False, random_state=RNG)  # shuffle=False for time-series
+            kf = KFold(n_splits=n_splits, shuffle=False)  # shuffle=False for time-series (no random_state needed)
 
             for col in mean_encode_cols:
                 # Fill missing values
