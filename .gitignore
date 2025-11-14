@@ -7,8 +7,12 @@ __pycache__/
 # Virtual environment
 venv/
 
-# Environment variables
+# Environment variables (CRITICAL: Never commit credentials!)
 .env
+.env.*
+*.env
+src/.env
+src/config.yaml
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
@@ -17,6 +21,10 @@ venv/
 *.log
 *.tmp
 .DS_Store
+
+# Configuration files with credentials (use .example templates instead)
+config.yaml
+src/config.yaml
 
 # IDE and editor settings
 .vscode/
