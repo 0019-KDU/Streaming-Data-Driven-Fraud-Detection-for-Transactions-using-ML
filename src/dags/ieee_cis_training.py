@@ -563,10 +563,14 @@ class IEEECISFraudTraining:
         logger.info(f"Removed {n_removed:,} outliers (>{threshold:.2f}) from {column} ({n_removed/n_before:.2%})")
         return df
     
-    def remove_correlated_features(self, X_train: pd.DataFrame, X_valid: pd.DataFrame, threshold: float = 0.85) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def remove_correlated_features(self, X_train: pd.DataFrame, X_valid: pd.DataFrame, threshold: float = 0.95) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         🆕 PHASE 1 IMPROVEMENT #5: Remove highly correlated features
         From top Kaggle solutions - reduces multicollinearity and overfitting
+
+        ⚡ RELAXED: Default threshold increased from 0.85 to 0.95
+           - 0.85 was too aggressive (removed 28 features, leaving only 45)
+           - 0.95 keeps more features for FFS to evaluate
         """
         logger.info(f"Removing highly correlated features (threshold={threshold})...")
         
@@ -599,7 +603,7 @@ class IEEECISFraudTraining:
         X_valid: pd.DataFrame,
         y_valid: pd.Series,
         max_features: int = 50,
-        min_improvement: float = 0.0001
+        min_improvement: float = 0.00001  # ⚡ RELAXED: Was 0.0001 (too strict), now 0.00001
     ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
         """
         🆕 PHASE 2 IMPROVEMENT #1: Forward Feature Selection (+5-8% AUC) 🔥 BIGGEST GAIN
@@ -621,7 +625,7 @@ class IEEECISFraudTraining:
         
         # Quick LightGBM for feature selection (faster than full training)
         base_model = LGBMClassifier(
-            n_estimators=100,
+            n_estimators=200,  # ⚡ INCREASED: Was 100, now 200 for better feature evaluation
             max_depth=5,
             learning_rate=0.1,
             num_leaves=31,
