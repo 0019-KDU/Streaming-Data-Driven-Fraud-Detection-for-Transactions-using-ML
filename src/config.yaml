@@ -34,13 +34,17 @@ training:
   force_cpu_only: true  # Skip GPU attempts, use CPU directly (for VMs without GPU)
   # SMOTE configuration for class imbalance handling
   use_smote: true
-  smote_sampling_strategy: 0.6  # 60% of majority class (creates ~40% fraud in resampled data)
+  smote_sampling_strategy: 0.3  # 30% of majority class (less aggressive synthetic fraud sampling)
   
   # 🆕 PHASE 2 & 3: Advanced Techniques for 96%+ AUC (Top 5% Kaggle)
-  use_forward_feature_selection: false  # 🔥 DISABLED: Was reducing features too aggressively (45→12)
-  ffs_max_features: 50  # Stop FFS after 50 features
-  use_randomized_search: false  # ⚠️ SLOW: Takes 30-60 min, +2-4% AUC (enable for final tuning)
-  random_search_iterations: 100  # 100 random hyperparameter combinations
+  use_forward_feature_selection: false  # disabled for quick win (restore full feature space)
+  ffs_max_features: 50  # Stop FFS after 50 features (kept for later tuning)
+  use_randomized_search: true  # enable randomized hyperparameter search (quick experiments)
+  random_search_iterations: 50  # 50 random hyperparameter combinations (faster sweep)
+  # Alternate imbalance strategy: when true, training code should compute scale_pos_weight = n_legit / n_fraud
+  scale_pos_weight_auto: true
+  # Enable CV-based target encoding (k-fold target encoding) to avoid leakage
+  use_cv_target_encoding: true
 
 model:
   test_size: 0.2
