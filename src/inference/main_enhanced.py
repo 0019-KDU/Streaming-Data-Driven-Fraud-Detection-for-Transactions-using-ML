@@ -38,8 +38,9 @@ from pyspark.sql.types import (
     IntegerType, DoubleType, TimestampType
 )
 
-# Import velocity service
+# Import velocity service and ATO detection
 from velocity_service import VelocityFeatureService
+from ato_detection_service import ATODetectionService
 
 # Configure logging
 logging.basicConfig(
@@ -601,8 +602,9 @@ class EnhancedFraudDetectionInference:
                     'email_is_generic': email_is_generic.fillna(0).astype('int8'),
                 })
 
-                # ✅ CRITICAL: Compute velocity features using velocity service
+                # ✅ CRITICAL: Compute velocity features using Redis-backed distributed service
                 import time
+                import os
                 from velocity_service import VelocityFeatureService
 
                 current_time = time.time()
@@ -610,12 +612,75 @@ class EnhancedFraudDetectionInference:
                 # Add timestamp column for velocity computation
                 input_df['timestamp'] = current_time
 
-                # Create velocity service instance (each Spark worker gets its own)
-                velocity_service = VelocityFeatureService()
+                # Create velocity service instance with Redis support
+                # Each Spark worker shares Redis state (distributed tracking)
+                redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+                velocity_service = VelocityFeatureService(
+                    redis_url=redis_url,
+                    max_history_seconds=7 * 24 * 3600,  # 7 days
+                    use_fallback=True  # Enable local fallback on Redis failure
+                )
+                
+                # Create ATO detection service instance with Redis support
+                ato_service = ATODetectionService(
+                    redis_url=redis_url,
+                    history_days=90,  # 90-day behavioral history
+                    connection_timeout=2
+                )
+                
+                # Log service health on first use
+                velocity_health = velocity_service.health_check()
+                ato_health = ato_service.health_check()
+                if not velocity_health['redis_connected']:
+                    logger.warning(f"Velocity service health: {velocity_health}")
+                if not ato_health['redis_connected']:
+                    logger.warning(f"ATO service health: {ato_health}")
+                
                 input_df_with_velocity = velocity_service.process_batch(input_df)
 
                 # Remove temporary timestamp column
                 input_df = input_df_with_velocity.drop(columns=['timestamp'], errors='ignore')
+                
+                # ✅ ACCOUNT TAKEOVER (ATO) DETECTION
+                # Analyze each transaction for ATO patterns (geo-velocity, device changes, etc.)
+                ato_risk_scores = []
+                ato_confidences = []
+                ato_flags = []
+                
+                for i in range(n):
+                    # Extract transaction data for ATO analysis
+                    transaction = {
+                        'card1': card1.iloc[i] if i < len(card1) else None,
+                        'TransactionAmt': TransactionAmt.iloc[i] if i < len(TransactionAmt) else 0.0,
+                    }
+                    
+                    # Extract optional fields (device, location, session)
+                    # These would come from enhanced data collection in production
+                    device_id = None  # TODO: Extract from transaction metadata
+                    device_type = None
+                    session_id = None
+                    latitude = None
+                    longitude = None
+                    
+                    # Perform ATO analysis
+                    ato_result = ato_service.analyze_transaction(
+                        transaction=transaction,
+                        latitude=latitude,
+                        longitude=longitude,
+                        device_id=device_id,
+                        device_type=device_type,
+                        session_id=session_id
+                    )
+                    
+                    # Store ATO detection results
+                    ato_risk_scores.append(ato_result['ato_risk_score'])
+                    ato_confidences.append(ato_result['ato_confidence'])
+                    ato_flags.append(1 if ato_result['ato_detected'] else 0)
+                
+                # Add ATO features to dataframe
+                input_df['ato_risk_score'] = ato_risk_scores
+                input_df['ato_confidence'] = ato_confidences
+                input_df['ato_detected'] = ato_flags
 
                 # Apply frequency encoding using pipeline
                 if pipeline is not None and hasattr(pipeline, 'transform'):
@@ -666,6 +731,12 @@ class EnhancedFraudDetectionInference:
                         velocity_risk = input_df.loc[input_df.index[i], 'velocity_risk_score']
                         if velocity_risk > 0.7:
                             rule_based_flags[i] = True
+                    
+                    # Flag 5: ATO detected (CRITICAL - Account Takeover)
+                    if 'ato_detected' in input_df.columns:
+                        ato_detected = input_df.loc[input_df.index[i], 'ato_detected']
+                        if ato_detected == 1:
+                            rule_based_flags[i] = True
 
                 # Boost probabilities for rule-based flags (ensure they get flagged)
                 adjusted_probabilities = probabilities.copy()
@@ -683,6 +754,11 @@ class EnhancedFraudDetectionInference:
                     velocity_risk = 0.0
                     if 'velocity_risk_score' in input_df.columns:
                         velocity_risk = input_df.loc[input_df.index[i], 'velocity_risk_score']
+                    
+                    # Calculate ATO risk (highest priority)
+                    ato_risk = 0.0
+                    if 'ato_risk_score' in input_df.columns:
+                        ato_risk = input_df.loc[input_df.index[i], 'ato_risk_score']
                     
                     # Calculate amount risk
                     amount = TransactionAmt.iloc[i]
@@ -708,21 +784,25 @@ class EnhancedFraudDetectionInference:
                             method='dynamic'  # Use dynamic weights
                         )
                     else:
-                        # Fallback: manual hybrid calculation
+                        # Fallback: manual hybrid calculation with ATO integration
                         base_threshold = threshold
                         tau_V = base_threshold - (velocity_risk * 0.15)
                         tau_Amount = base_threshold - (amount_risk * 0.10)
+                        tau_ATO = base_threshold - (ato_risk * 0.25)  # ATO has highest weight
                         
-                        # Dynamic weights
-                        if velocity_risk > 0.7:
-                            w1, w2, w3 = 0.3, 0.5, 0.2
+                        # Dynamic weights (ATO takes priority)
+                        if ato_risk > 0.8:
+                            # Critical ATO risk - aggressive threshold
+                            w1, w2, w3, w4 = 0.1, 0.2, 0.1, 0.6  # 60% weight to ATO
+                        elif velocity_risk > 0.7:
+                            w1, w2, w3, w4 = 0.2, 0.4, 0.2, 0.2
                         elif amount_risk > 0.7:
-                            w1, w2, w3 = 0.3, 0.2, 0.5
+                            w1, w2, w3, w4 = 0.2, 0.2, 0.4, 0.2
                         else:
-                            w1, w2, w3 = 0.6, 0.2, 0.2
+                            w1, w2, w3, w4 = 0.5, 0.2, 0.1, 0.2
                         
-                        tau_hybrid = w1 * base_threshold + w2 * tau_V + w3 * tau_Amount
-                        per_transaction_thresholds[i] = np.clip(tau_hybrid, 0.15, 0.85)
+                        tau_hybrid = w1 * base_threshold + w2 * tau_V + w3 * tau_Amount + w4 * tau_ATO
+                        per_transaction_thresholds[i] = np.clip(tau_hybrid, 0.10, 0.85)  # Lower min for ATO
 
                 # Apply per-transaction thresholds (using adjusted probabilities)
                 predictions = (adjusted_probabilities >= per_transaction_thresholds).astype(int)
@@ -784,6 +864,17 @@ class EnhancedFraudDetectionInference:
                                 factors.append("rapid_transactions")
                             if 'amt_spike_1h' in input_df.columns and input_df.loc[input_df.index[i], 'amt_spike_1h'] > 0.8:
                                 factors.append("amount_spike")
+                        
+                        # ATO-based risk (HIGHEST PRIORITY)
+                        if 'ato_detected' in input_df.columns and input_df.loc[input_df.index[i], 'ato_detected'] == 1:
+                            ato_confidence = input_df.loc[input_df.index[i], 'ato_confidence']
+                            factors.append(f"ACCOUNT_TAKEOVER_{ato_confidence}")
+                        if 'ato_risk_score' in input_df.columns:
+                            ato_risk = input_df.loc[input_df.index[i], 'ato_risk_score']
+                            if ato_risk > 0.8:
+                                factors.append("critical_ato_risk")
+                            elif ato_risk > 0.6:
+                                factors.append("high_ato_risk")
 
                         # Rule-based flag indicator
                         if rule_based_flags[i]:
