@@ -419,6 +419,13 @@ class IEEECISFraudTraining:
         df['dt_is_weekend'] = (df['dt_wday'] >= 5).astype('int8')
         df['dt_is_night'] = ((df['dt_hour'] >= 22) | (df['dt_hour'] <= 6)).astype('int8')
         
+        # 🔥🔥🔥 1ST PLACE: Add month for GroupKFold CV
+        # Training data: Dec 2017 (month 12) to May 2018 (month 17)
+        import datetime
+        START_DATE = datetime.datetime.strptime('2017-11-30', '%Y-%m-%d')
+        df['DT_M'] = df['TransactionDT'].apply(lambda x: (START_DATE + datetime.timedelta(seconds=x)))
+        df['DT_M'] = (df['DT_M'].dt.year - 2017) * 12 + df['DT_M'].dt.month
+        
         # 🆕 PHASE 1 IMPROVEMENT: Add 6 additional time binary features from top Kaggle solutions
         df['is_weekend'] = df['dt_wday'].isin([5, 6]).astype(np.int8)
         df['is_night'] = df['dt_hour'].isin([0, 1, 2, 3, 4, 5, 22, 23]).astype(np.int8)
@@ -1247,6 +1254,51 @@ class IEEECISFraudTraining:
         
         return df
 
+    def filter_v_columns_1st_place(self, df: pd.DataFrame) -> pd.DataFrame:
+        """🔥🔥🔥 1ST PLACE: Use only 120 V-columns (not all 339)"""
+        logger.info("Filtering V-columns to 1st place solution set (120 columns)...")
+        
+        # Exact V-columns used by 1st place solution
+        v_cols = [1, 3, 4, 6, 8, 11, 13, 14, 17, 20, 23, 26, 27, 30,
+                  36, 37, 40, 41, 44, 47, 48, 54, 56, 59, 62, 65, 67, 68, 70,
+                  76, 78, 80, 82, 86, 88, 89, 91,
+                  107, 108, 111, 115, 117, 120, 121, 123, 124, 127, 129, 130, 136,
+                  138, 139, 142, 147, 156, 162, 165, 160, 166,
+                  178, 176, 173, 182, 187, 203, 205, 207, 215,
+                  169, 171, 175, 180, 185, 188, 198, 210, 209,
+                  218, 223, 224, 226, 228, 229, 235, 240, 258, 257, 253, 252, 260, 261,
+                  264, 266, 267, 274, 277, 220, 221, 234, 238, 250, 271,
+                  294, 284, 285, 286, 291, 297, 303, 305, 307, 309, 310, 320,
+                  281, 283, 289, 296, 301, 314]
+        
+        keep_v = [f'V{x}' for x in v_cols]
+        all_v = [c for c in df.columns if c.startswith('V') and c[1:].isdigit()]
+        remove_v = [c for c in all_v if c not in keep_v]
+        
+        if remove_v:
+            logger.info(f"  Removing {len(remove_v)} V-columns (keeping {len(keep_v)})")
+            df = df.drop(columns=remove_v)
+        
+        return df
+    
+    def remove_time_inconsistent_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """🔥🔥🔥 1ST PLACE: Remove features that failed time consistency test"""
+        logger.info("Removing time-inconsistent features (1st place solution)...")
+        
+        # Features that failed time consistency test in 1st place solution
+        remove_cols = ['C3', 'M5', 'id_08', 'id_33',
+                       'card4', 'id_07', 'id_14', 'id_21', 'id_30', 'id_32', 'id_34',
+                       'id_22', 'id_23', 'id_24', 'id_25', 'id_26', 'id_27',
+                       'D6', 'D7', 'D8', 'D9', 'D12', 'D13', 'D14']
+        
+        existing_removes = [c for c in remove_cols if c in df.columns]
+        if existing_removes:
+            logger.info(f"  Removing {len(existing_removes)} time-inconsistent features")
+            logger.info(f"  Features: {existing_removes[:10]}...")
+            df = df.drop(columns=existing_removes)
+        
+        return df
+    
     def remove_high_null_columns(self, df: pd.DataFrame, threshold: float = 0.90) -> pd.DataFrame:
         """
         🆕 PHASE 1 IMPROVEMENT #6: Remove columns with >90% missing values
@@ -2034,17 +2086,17 @@ class IEEECISFraudTraining:
                     )
                     models_to_try.append(('XGBoost', xgb_model))
             else:
-                logger.info("  Using XGBoost with CPU...")
+                logger.info("  Using XGBoost with CPU (1ST PLACE hyperparameters)...")
                 xgb_model = XGBClassifier(
-                    n_estimators=3000,
-                    max_depth=6,  # Reduced from 8 to 6 for better recall
-                    learning_rate=0.02,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    reg_alpha=0.3,
-                    reg_lambda=2.0,
-                    gamma=0.2,
-                    min_child_weight=5,
+                    n_estimators=5000,  # 🔥 1st place used 5000
+                    max_depth=12,  # 🔥 1st place used 12 (was 6)
+                    learning_rate=0.02,  # 🔥 1st place used 0.02 ✓
+                    subsample=0.8,  # 🔥 1st place used 0.8 ✓
+                    colsample_bytree=0.4,  # 🔥 1st place used 0.4 (was 0.8)
+                    reg_alpha=0.0,  # 🔥 1st place used 0 (was 0.3)
+                    reg_lambda=1.0,  # 🔥 Keep default (was 2.0)
+                    gamma=0.0,  # 🔥 1st place used 0 (was 0.2)
+                    min_child_weight=1,  # 🔥 Default (was 5)
                     scale_pos_weight=scale_pos_weight,
                     eval_metric="aucpr",
                     tree_method="hist",
@@ -2748,6 +2800,12 @@ class IEEECISFraudTraining:
         # Load data
         df = self.load_and_merge_data()
         
+        # 🔥🔥🔥 1ST PLACE: Filter to 120 V-columns (not all 339)
+        df = self.filter_v_columns_1st_place(df)
+        
+        # 🔥🔥🔥 1ST PLACE: Remove time-inconsistent features
+        df = self.remove_time_inconsistent_features(df)
+        
         # 🆕 PHASE 1 IMPROVEMENT #6: Drop columns with >90% missing values
         df = self.remove_high_null_columns(df, threshold=0.90)
         
@@ -2830,11 +2888,12 @@ class IEEECISFraudTraining:
         logger.info(f"  X_train: {X_train.shape}")
         logger.info(f"  X_valid: {X_valid.shape}")
         
-        # 🆕 PHASE 1 IMPROVEMENT #5: Remove highly correlated features (>0.95)
-        # ⚠️ Increased from 0.85 to 0.95 - keep more features (V-columns + interactions)
-        X_train, X_valid = self.remove_correlated_features(X_train, X_valid, threshold=0.95)
+        # 🔥🔥🔥 1ST PLACE: DISABLE correlation removal (Magic UID features need correlation!)
+        # Correlation removal was deleting 100 features including important Magic UID aggregations
+        # X_train, X_valid = self.remove_correlated_features(X_train, X_valid, threshold=0.95)
+        logger.info("🔥 Correlation removal DISABLED (preserves Magic UID features)")
         
-        logger.info(f"After correlation removal:")
+        logger.info(f"Feature set (no correlation removal):")
         logger.info(f"  X_train: {X_train.shape}")
         logger.info(f"  X_valid: {X_valid.shape}")
         
