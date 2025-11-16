@@ -868,6 +868,203 @@ class IEEECISFraudTraining:
         logger.info(f"  Created {len([c for c in df.columns if 'network' in c or 'card1_addr' in c or 'addr1_card' in c])} network pattern features")
         return df
 
+    def create_uid_aggregation_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        🔥 TOP 5% KAGGLE SOLUTION: UID-based aggregation features (+2-4% AUC boost!)
+        Source: https://medium.com/data-science/ieee-cis-fraud-detection-top-5-solution-5488fc66e95f
+        
+        Creates user identifier (UID) from card1 + D1 + addr1, then computes:
+        - Transaction patterns per user (mean/std amounts, counts)
+        - Behavioral features per user (M columns, C columns, D columns)
+        
+        Why this works: Groups transactions by actual user, detecting:
+        - Stolen cards (unusual amounts/patterns for that card)
+        - Fraud rings (multiple cards with similar patterns)
+        - Account takeover (sudden behavior change)
+        """
+        logger.info("Creating UID-based aggregation features (Top 5% Kaggle technique)...")
+        df = df.copy()
+        
+        # Create UID: card1 + D1 + addr1 (uniquely identifies users)
+        uid_parts = []
+        if 'card1' in df.columns:
+            uid_parts.append(df['card1'].fillna(-999).astype(str))
+        if 'D1' in df.columns:
+            uid_parts.append(df['D1'].fillna(-999).astype(str))
+        if 'addr1' in df.columns:
+            uid_parts.append(df['addr1'].fillna(-999).astype(str))
+        
+        if len(uid_parts) >= 2:
+            df['uid'] = uid_parts[0]
+            for p in uid_parts[1:]:
+                df['uid'] = df['uid'] + '_' + p
+            
+            # 1. Transaction Amount aggregations per UID (most important!)
+            if 'TransactionAmt' in df.columns:
+                uid_amt_agg = df.groupby('uid')['TransactionAmt'].agg(['mean', 'std']).reset_index()
+                uid_amt_agg.columns = ['uid', 'TransactionAmt_uid_mean', 'TransactionAmt_uid_std']
+                df = df.merge(uid_amt_agg, on='uid', how='left')
+            
+            # 2. M column aggregations (match features - names, addresses)
+            m_cols_for_agg = ['M9', 'M5', 'M4', 'M1', 'M7', 'M8']
+            for col in m_cols_for_agg:
+                if col in df.columns:
+                    uid_m_agg = df.groupby('uid')[col].agg(['mean']).reset_index()
+                    uid_m_agg.columns = ['uid', f'{col}_uid_mean']
+                    df = df.merge(uid_m_agg, on='uid', how='left')
+            
+            # 3. D column aggregations (time deltas)
+            d_cols_for_agg = ['D2', 'D15']
+            for col in d_cols_for_agg:
+                if col in df.columns:
+                    uid_d_agg = df.groupby('uid')[col].agg(['mean']).reset_index()
+                    uid_d_agg.columns = ['uid', f'{col}_uid_mean']
+                    df = df.merge(uid_d_agg, on='uid', how='left')
+            
+            # 4. C column aggregations (counting features)
+            c_cols_for_agg = ['C13', 'C9', 'C1', 'C11']
+            for col in c_cols_for_agg:
+                if col in df.columns:
+                    uid_c_agg = df.groupby('uid')[col].agg(['mean']).reset_index()
+                    uid_c_agg.columns = ['uid', f'{col}_uid_mean']
+                    df = df.merge(uid_c_agg, on='uid', how='left')
+            
+            # 5. Alternative UID: card1 + addr1 (simpler, handles missing D1)
+            uid2_parts = []
+            if 'card1' in df.columns:
+                uid2_parts.append(df['card1'].fillna(-999).astype(str))
+            if 'addr1' in df.columns:
+                uid2_parts.append(df['addr1'].fillna(-999).astype(str))
+            
+            if len(uid2_parts) == 2:
+                df['uid2'] = uid2_parts[0] + '_' + uid2_parts[1]
+                
+                # M column aggregations with uid2
+                m_cols_uid2 = ['M4', 'M1', 'M7', 'M8']
+                for col in m_cols_uid2:
+                    if col in df.columns:
+                        uid2_m_agg = df.groupby('uid2')[col].agg(['mean', 'std']).reset_index()
+                        uid2_m_agg.columns = ['uid2', f'{col}_uid2_mean', f'{col}_uid2_std']
+                        df = df.merge(uid2_m_agg, on='uid2', how='left')
+                
+                # Drop uid2 (only needed for aggregation)
+                df = df.drop(columns=['uid2'])
+            
+            # Drop uid (only needed for aggregation)
+            df = df.drop(columns=['uid'])
+            
+            uid_features = [c for c in df.columns if '_uid_' in c or '_uid2_' in c]
+            logger.info(f"  Created {len(uid_features)} UID-based aggregation features")
+        else:
+            logger.info("  Skipped: Not enough columns for UID creation")
+        
+        return df
+
+    def normalize_d_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        🔥 TOP 5% KAGGLE SOLUTION: Normalize D-columns (time deltas)
+        Source: https://medium.com/data-science/ieee-cis-fraud-detection-top-5-solution-5488fc66e95f
+        
+        D columns represent time deltas (days between transactions).
+        Subtracting TransactionDT makes them constant per user, improving signal.
+        
+        Example: D1 = days since card first used
+        - Raw D1: varies by when you query (not useful)
+        - Normalized D1: constant for each card (useful pattern!)
+        """
+        logger.info("Normalizing D-columns (time deltas)...")
+        df = df.copy()
+        
+        if 'TransactionDT' in df.columns:
+            transaction_days = df['TransactionDT'] / (24 * 60 * 60)
+            
+            # Normalize D1, D2, D4, D10, D11, D15 (top performers from Kaggle)
+            d_cols_to_normalize = ['D1', 'D2', 'D4', 'D10', 'D11', 'D15']
+            normalized_count = 0
+            
+            for col in d_cols_to_normalize:
+                if col in df.columns:
+                    df[f'{col}_normalized'] = (df[col] - transaction_days).astype('float32')
+                    normalized_count += 1
+            
+            logger.info(f"  Normalized {normalized_count} D-columns")
+        else:
+            logger.info("  Skipped: TransactionDT not found")
+        
+        return df
+
+    def create_card_addr_encoding_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        🔥 TOP 5% KAGGLE SOLUTION: Card-Address combination encoding
+        Source: https://medium.com/data-science/ieee-cis-fraud-detection-top-5-solution-5488fc66e95f
+        
+        Creates frequency encoding for card+address combinations.
+        Detects fraud patterns:
+        - Stolen card used at unusual address
+        - Fraud ring using same address with multiple cards
+        - Email domain mismatches
+        """
+        logger.info("Creating card-address combination encoding features...")
+        df = df.copy()
+        
+        # 1. card1 + addr1 frequency encoding
+        if 'card1' in df.columns and 'addr1' in df.columns:
+            df['card1_addr1'] = df['card1'].astype(str) + '_' + df['addr1'].fillna('na').astype(str)
+            card1_addr1_freq = df['card1_addr1'].value_counts().to_dict()
+            df['card1_addr1_FE'] = df['card1_addr1'].map(card1_addr1_freq).fillna(0).astype('int32')
+            df = df.drop(columns=['card1_addr1'])
+        
+        # 2. card4 + addr1 + P_emaildomain frequency encoding
+        if all(c in df.columns for c in ['card4', 'addr1', 'P_emaildomain']):
+            df['card4_addr1_P_emaildomain'] = (df['card4'].astype(str) + '_' + 
+                                                df['addr1'].fillna('na').astype(str) + '_' + 
+                                                df['P_emaildomain'].fillna('na').astype(str))
+            freq = df['card4_addr1_P_emaildomain'].value_counts().to_dict()
+            df['card4_addr1_P_emaildomain_FE'] = df['card4_addr1_P_emaildomain'].map(freq).fillna(0).astype('int32')
+            df = df.drop(columns=['card4_addr1_P_emaildomain'])
+        
+        # 3. card1 + addr1 + R_emaildomain frequency encoding
+        if all(c in df.columns for c in ['card1', 'addr1', 'R_emaildomain']):
+            df['card1_addr1_R_emaildomain'] = (df['card1'].astype(str) + '_' + 
+                                                df['addr1'].fillna('na').astype(str) + '_' + 
+                                                df['R_emaildomain'].fillna('na').astype(str))
+            freq = df['card1_addr1_R_emaildomain'].value_counts().to_dict()
+            df['card1_addr1_R_emaildomain_FE'] = df['card1_addr1_R_emaildomain'].map(freq).fillna(0).astype('int32')
+            df = df.drop(columns=['card1_addr1_R_emaildomain'])
+        
+        # 4. card2 frequency encoding
+        if 'card2' in df.columns:
+            card2_freq = df['card2'].value_counts().to_dict()
+            df['card2_FE'] = df['card2'].map(card2_freq).fillna(0).astype('int32')
+        
+        # 5. card1 frequency encoding
+        if 'card1' in df.columns:
+            card1_freq = df['card1'].value_counts().to_dict()
+            df['card1_FE'] = df['card1'].map(card1_freq).fillna(0).astype('int32')
+        
+        # 6. card3 + addr1 + P_emaildomain frequency encoding
+        if all(c in df.columns for c in ['card3', 'addr1', 'P_emaildomain']):
+            df['card3_addr1_P_emaildomain'] = (df['card3'].astype(str) + '_' + 
+                                                df['addr1'].fillna('na').astype(str) + '_' + 
+                                                df['P_emaildomain'].fillna('na').astype(str))
+            freq = df['card3_addr1_P_emaildomain'].value_counts().to_dict()
+            df['card3_addr1_P_emaildomain_FE'] = df['card3_addr1_P_emaildomain'].map(freq).fillna(0).astype('int32')
+            df = df.drop(columns=['card3_addr1_P_emaildomain'])
+        
+        # 7. card4 + addr1 + R_emaildomain frequency encoding
+        if all(c in df.columns for c in ['card4', 'addr1', 'R_emaildomain']):
+            df['card4_addr1_R_emaildomain'] = (df['card4'].astype(str) + '_' + 
+                                                df['addr1'].fillna('na').astype(str) + '_' + 
+                                                df['R_emaildomain'].fillna('na').astype(str))
+            freq = df['card4_addr1_R_emaildomain'].value_counts().to_dict()
+            df['card4_addr1_R_emaildomain_FE'] = df['card4_addr1_R_emaildomain'].map(freq).fillna(0).astype('int32')
+            df = df.drop(columns=['card4_addr1_R_emaildomain'])
+        
+        encoding_features = [c for c in df.columns if c.endswith('_FE')]
+        logger.info(f"  Created {len(encoding_features)} card-address encoding features")
+        
+        return df
+
     def remove_high_null_columns(self, df: pd.DataFrame, threshold: float = 0.90) -> pd.DataFrame:
         """
         🆕 PHASE 1 IMPROVEMENT #6: Remove columns with >90% missing values
@@ -1386,10 +1583,16 @@ class IEEECISFraudTraining:
         
         # Mean encoded features (fraud rate) (NEW)
         mean_features = [c for c in df.columns if c.endswith('_fraud_rate')]
+        
+        # 🔥 NEW: Top 5% Kaggle features
+        uid_features = [c for c in df.columns if '_uid_' in c or '_uid2_' in c]
+        d_normalized_features = [c for c in df.columns if c.endswith('_normalized')]
+        card_encoding_features = [c for c in df.columns if c.endswith('_FE')]
 
         # Combine all
         self.all_features = (base_features + amount_agg_features + velocity_features + 
-                            freq_features + mean_features)
+                            freq_features + mean_features + uid_features + 
+                            d_normalized_features + card_encoding_features)
         self.all_features = [f for f in self.all_features if f in df.columns]
 
         logger.info(f"Total features: {len(self.all_features)}")
@@ -1398,6 +1601,9 @@ class IEEECISFraudTraining:
         logger.info(f"  Velocity: {len(velocity_features)}")
         logger.info(f"  Frequency: {len(freq_features)}")
         logger.info(f"  Mean Encoded (Fraud Rate): {len(mean_features)}")
+        logger.info(f"  UID Aggregations (Top 5% Kaggle): {len(uid_features)}")
+        logger.info(f"  D-Normalized (Top 5% Kaggle): {len(d_normalized_features)}")
+        logger.info(f"  Card Encoding (Top 5% Kaggle): {len(card_encoding_features)}")
 
         X = df[self.all_features].fillna(0).copy()
         y = df['isFraud'].copy() if 'isFraud' in df.columns else None
@@ -2317,6 +2523,15 @@ class IEEECISFraudTraining:
         
         # 🔥 NEW: Network pattern features (+2-3% AUC)
         df = self.create_network_features(df)
+        
+        # 🔥 TOP 5% KAGGLE: UID aggregation features (+2-4% AUC boost!)
+        df = self.create_uid_aggregation_features(df)
+        
+        # 🔥 TOP 5% KAGGLE: Normalize D-columns (time deltas)
+        df = self.normalize_d_columns(df)
+        
+        # 🔥 TOP 5% KAGGLE: Card-address combination encoding
+        df = self.create_card_addr_encoding_features(df)
 
         # Legacy velocity features (time-intensive but faster than multi-window)
         df = self.calculate_velocity_features(df)

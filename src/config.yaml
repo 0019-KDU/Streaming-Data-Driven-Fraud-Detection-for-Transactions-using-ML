@@ -56,7 +56,7 @@ training:
   optimized_scale_pos_weight: 20.0
   
   # 🔥 PHASE 1: Model Stacking (+2-4% AUC) - Ensemble of 3 models
-  use_model_stacking: true  # Train XGBoost + LightGBM + CatBoost with meta-learner
+  use_model_stacking: false  # ❌ DISABLED: Single LightGBM (0.27 AUC-PR) beats stacked ensemble (0.13)
   # K-Fold CV target encoding is already enabled above (use_cv_target_encoding: true)
 
 model:
