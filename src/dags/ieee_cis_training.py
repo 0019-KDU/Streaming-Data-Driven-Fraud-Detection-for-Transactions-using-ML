@@ -1291,7 +1291,8 @@ class IEEECISFraudTraining:
         
         for col in c_cols:
             if col in df.columns:
-                df = df[df[col] <= 500]
+                # Only remove rows where value exists AND is > 500 (keep NaN)
+                df = df[(df[col] <= 500) | (df[col].isna())]
         
         n_removed = n_before - len(df)
         logger.info(f"  Removed {n_removed:,} rows with C-column values >500 ({n_removed/n_before:.2%})")
@@ -1305,7 +1306,8 @@ class IEEECISFraudTraining:
         
         for col in d_cols:
             if col in df.columns:
-                df = df[df[col] >= 0]
+                # Only remove rows where value exists AND is < 0 (keep NaN)
+                df = df[(df[col] >= 0) | (df[col].isna())]
         
         n_removed = n_before - len(df)
         logger.info(f"  Removed {n_removed:,} rows with negative D-values ({n_removed/n_before:.2%})")
