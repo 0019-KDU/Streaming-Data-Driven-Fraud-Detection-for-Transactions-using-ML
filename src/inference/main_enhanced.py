@@ -636,7 +636,12 @@ class EnhancedFraudDetectionInference:
                 if not ato_health['redis_connected']:
                     logger.warning(f"ATO service health: {ato_health}")
                 
-                input_df_with_velocity = velocity_service.process_batch(input_df)
+                # ✅ NEW: Multi-entity velocity features (card + user + device levels)
+                # This provides comprehensive fraud detection across:
+                # - Card-level: Traditional card+addr+email tracking
+                # - User-level: Detect multi-card fraud (same user, different cards)
+                # - Device-level: Detect fraud rings (same device, multiple accounts)
+                input_df_with_velocity = velocity_service.process_batch(input_df, multi_entity=True)
 
                 # Remove temporary timestamp column
                 input_df = input_df_with_velocity.drop(columns=['timestamp'], errors='ignore')

@@ -124,6 +124,51 @@ class VelocityFeatureService:
 
         return '-'.join(parts) if parts else 'global'
 
+    def create_user_uid(self, transaction: Dict) -> str:
+        """
+        Create user identifier WITHOUT card info (for multi-card fraud detection)
+
+        This allows tracking user behavior across multiple cards:
+        - Detects fraudsters using multiple stolen cards from same user
+        - Tracks velocity at user level (not card level)
+        - Identifies unusual patterns (e.g., 10 different cards in 1 hour)
+
+        Args:
+            transaction: Transaction dictionary
+
+        Returns:
+            User identifier (e.g., 'user-315-87-gmail.com')
+        """
+        parts = []
+        for field in ['addr1', 'P_emaildomain']:
+            val = transaction.get(field)
+            if val is not None:
+                parts.append(str(val))
+            else:
+                parts.append('na')
+
+        return 'user-' + '-'.join(parts) if parts else 'user-global'
+
+    def create_device_uid(self, transaction: Dict) -> str:
+        """
+        Create device identifier (for cross-account fraud detection)
+
+        This allows tracking device behavior across multiple accounts:
+        - Detects fraud rings using same device for multiple cards
+        - Tracks device velocity (how many cards/users per device)
+        - Identifies compromised devices
+
+        Args:
+            transaction: Transaction dictionary
+
+        Returns:
+            Device identifier (e.g., 'device-iPhone-12')
+        """
+        device_info = transaction.get('DeviceInfo', 'unknown')
+        # Normalize device info (lowercase, strip whitespace)
+        device_info = str(device_info).lower().strip()
+        return f'device-{device_info}'
+
     def add_transaction(self, uid: str, timestamp: float, amount: float):
         """
         Add transaction to distributed history (Redis)
@@ -292,7 +337,84 @@ class VelocityFeatureService:
 
         return features
 
-    def process_batch(self, transactions: pd.DataFrame) -> pd.DataFrame:
+    def compute_multi_entity_features(
+        self,
+        transaction: Dict,
+        current_timestamp: float,
+        current_amount: float
+    ) -> Dict[str, float]:
+        """
+        Compute features for card, user, and device levels (multi-entity tracking)
+
+        This method computes velocity features at three granularity levels:
+        1. Card-level: Traditional card+addr+email UID (existing behavior)
+        2. User-level: Tracks behavior across multiple cards (NEW)
+        3. Device-level: Tracks behavior across multiple accounts (NEW)
+
+        Use Cases:
+        - Detect fraudster using multiple stolen cards from same user
+        - Detect fraud rings using same device for many accounts
+        - Identify account takeover (device change for existing user)
+
+        Args:
+            transaction: Transaction dictionary with card1, card2, addr1, P_emaildomain, DeviceInfo
+            current_timestamp: Current transaction timestamp (unix seconds)
+            current_amount: Current transaction amount
+
+        Returns:
+            Dictionary of velocity features with prefixes:
+            - card_* : Card-level features
+            - user_* : User-level features
+            - device_* : Device-level features
+            - cross_* : Cross-entity features (e.g., unique cards per user)
+        """
+        all_features = {}
+
+        # 1. Card-level features (existing)
+        card_uid = self.create_uid(transaction)
+        card_features = self.compute_velocity_features(card_uid, current_timestamp, current_amount)
+        all_features.update({f'card_{k}': v for k, v in card_features.items()})
+
+        # 2. User-level features (NEW - track across multiple cards)
+        user_uid = self.create_user_uid(transaction)
+        user_features = self.compute_velocity_features(user_uid, current_timestamp, current_amount)
+        all_features.update({f'user_{k}': v for k, v in user_features.items()})
+
+        # 3. Device-level features (NEW - track across multiple accounts)
+        device_uid = self.create_device_uid(transaction)
+        device_features = self.compute_velocity_features(device_uid, current_timestamp, current_amount)
+        all_features.update({f'device_{k}': v for k, v in device_features.items()})
+
+        # 4. Cross-entity risk indicators
+        # High risk if user has high velocity but card has low velocity (multi-card fraud)
+        all_features['cross_user_card_risk'] = max(
+            0,
+            user_features.get('velocity_risk_score', 0) - card_features.get('velocity_risk_score', 0)
+        )
+
+        # High risk if device has high velocity but user has low velocity (device sharing/fraud ring)
+        all_features['cross_device_user_risk'] = max(
+            0,
+            device_features.get('velocity_risk_score', 0) - user_features.get('velocity_risk_score', 0)
+        )
+
+        # Compute time since last transaction (NEW - explicit feature)
+        window_start = current_timestamp - self.windows['7d']
+        card_history = self._get_transaction_history(card_uid, window_start, current_timestamp)
+        if card_history:
+            most_recent_ts = max(ts for ts, _ in card_history)
+            all_features['seconds_since_last_txn'] = float(current_timestamp - most_recent_ts)
+        else:
+            all_features['seconds_since_last_txn'] = 99999.0  # Large value = first transaction
+
+        # Update all UIDs in history (IMPORTANT: do this AFTER computing features)
+        self.add_transaction(card_uid, current_timestamp, current_amount)
+        self.add_transaction(user_uid, current_timestamp, current_amount)
+        self.add_transaction(device_uid, current_timestamp, current_amount)
+
+        return all_features
+
+    def process_batch(self, transactions: pd.DataFrame, multi_entity: bool = True) -> pd.DataFrame:
         """
         Process a batch of transactions and add velocity features
 
@@ -301,6 +423,8 @@ class VelocityFeatureService:
                 - TransactionAmt
                 - timestamp (datetime or unix timestamp)
                 - card1, card2, addr1, P_emaildomain (for uid)
+                - DeviceInfo (optional, for device-level features)
+            multi_entity: If True, compute card, user, and device level features (default: True)
 
         Returns:
             DataFrame with velocity features added
@@ -315,21 +439,22 @@ class VelocityFeatureService:
             # Use current time if no timestamp
             timestamps = pd.Series([time.time()] * len(transactions))
 
-        # Create UIDs
-        uids = transactions.apply(
-            lambda row: self.create_uid(row.to_dict()),
-            axis=1
-        )
-
         # Compute velocity features for each transaction
         velocity_features_list = []
 
-        for idx, (uid, ts, amt) in enumerate(zip(uids, timestamps, transactions['TransactionAmt'])):
-            # Compute features BEFORE adding current transaction
-            features = self.compute_velocity_features(uid, ts, amt)
+        for idx, (row_idx, row) in enumerate(transactions.iterrows()):
+            ts = timestamps.iloc[idx]
+            amt = row['TransactionAmt']
+            txn_dict = row.to_dict()
 
-            # Add current transaction to history
-            self.add_transaction(uid, ts, amt)
+            if multi_entity:
+                # NEW: Multi-entity features (card + user + device)
+                features = self.compute_multi_entity_features(txn_dict, ts, amt)
+            else:
+                # OLD: Card-level only (backwards compatible)
+                uid = self.create_uid(txn_dict)
+                features = self.compute_velocity_features(uid, ts, amt)
+                self.add_transaction(uid, ts, amt)
 
             velocity_features_list.append(features)
 
@@ -364,12 +489,13 @@ class VelocityFeatureService:
 
         return stats
 
-    def clear_history(self, uid: Optional[str] = None):
+    def clear_history(self, uid: Optional[str] = None, entity_type: Optional[str] = None):
         """
         Clear transaction history
 
         Args:
             uid: User identifier (if None, clears all users)
+            entity_type: Entity type to clear ('card', 'user', 'device', or None for all)
         """
         if uid:
             # Clear specific user
@@ -382,17 +508,32 @@ class VelocityFeatureService:
             if uid in self.local_cache:
                 del self.local_cache[uid]
         else:
-            # Clear all
+            # Clear all or specific entity type
             if self.redis_available:
                 try:
-                    # Delete all velocity keys
-                    pattern = "velocity:*"
+                    # Delete velocity keys based on entity type
+                    if entity_type == 'user':
+                        pattern = "velocity:user-*"
+                    elif entity_type == 'device':
+                        pattern = "velocity:device-*"
+                    elif entity_type == 'card':
+                        pattern = "velocity:[^user][^device]*"  # Card UIDs don't start with user- or device-
+                    else:
+                        pattern = "velocity:*"  # All
+
                     for key in self.redis_client.scan_iter(match=pattern, count=100):
                         self.redis_client.delete(key)
                 except Exception as e:
-                    logger.warning(f"Failed to clear all Redis keys: {e}")
+                    logger.warning(f"Failed to clear Redis keys: {e}")
 
-            self.local_cache.clear()
+            # Clear local cache
+            if entity_type:
+                # Filter by entity type
+                keys_to_delete = [k for k in self.local_cache.keys() if k.startswith(f'{entity_type}-')]
+                for k in keys_to_delete:
+                    del self.local_cache[k]
+            else:
+                self.local_cache.clear()
 
     def reconnect_redis(self):
         """Attempt to reconnect to Redis (for health check recovery)"""
