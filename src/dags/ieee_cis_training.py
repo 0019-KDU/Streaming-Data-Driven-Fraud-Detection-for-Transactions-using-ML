@@ -2401,7 +2401,12 @@ class IEEECISFraudTraining:
             meta_model = calibrated_model['meta_model']
             meta_valid = np.zeros((len(X_valid), len(base_models)))
             for idx, (name, base_model) in enumerate(base_models):
-                meta_valid[:, idx] = base_model.predict_proba(X_valid)[:, 1]
+                pred = base_model.predict_proba(X_valid)
+                if pred.ndim == 1:
+                    # Custom objective returns raw scores, apply sigmoid
+                    meta_valid[:, idx] = 1.0 / (1.0 + np.exp(-pred))
+                else:
+                    meta_valid[:, idx] = pred[:, 1]
             y_valid_proba = meta_model.predict_proba(meta_valid)[:, 1]
         else:
             # Single model
