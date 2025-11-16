@@ -501,6 +501,67 @@ class IEEECISFraudTraining:
         
         return df
 
+    def create_magic_uid_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """🔥🔥🔥 1ST PLACE KAGGLE: Magic UID (LB 0.9677!)"""
+        logger.info("Creating Magic UID features (1st place solution)...")
+        df = df.copy()
+        
+        df['card1_addr1'] = df['card1'].fillna(-999).astype(str) + '_' + df['addr1'].fillna(-999).astype(str)
+        df['day'] = df['TransactionDT'] / (24 * 60 * 60)
+        df['magic_uid'] = df['card1_addr1'].astype(str) + '_' + np.floor(df['day'] - df['D1']).fillna(-999).astype(str)
+        
+        # TransactionAmt aggregations
+        df['magic_uid_TransactionAmt_mean'] = df.groupby('magic_uid')['TransactionAmt'].transform('mean')
+        df['magic_uid_TransactionAmt_std'] = df.groupby('magic_uid')['TransactionAmt'].transform('std')
+        
+        # D-column aggregations
+        for col in ['D4', 'D9', 'D10', 'D15']:
+            if col in df.columns:
+                df[f'magic_uid_{col}_mean'] = df.groupby('magic_uid')[col].transform('mean')
+                df[f'magic_uid_{col}_std'] = df.groupby('magic_uid')[col].transform('std')
+        
+        # C-column mean
+        c_cols = [f'C{i}' for i in range(1, 15) if i != 3 and f'C{i}' in df.columns]
+        for col in c_cols:
+            df[f'magic_uid_{col}_mean'] = df.groupby('magic_uid')[col].transform('mean')
+        
+        # M-column mean
+        m_cols = [f'M{i}' for i in range(1, 10) if f'M{i}' in df.columns]
+        for col in m_cols:
+            df[f'magic_uid_{col}_mean'] = df.groupby('magic_uid')[col].transform('mean')
+        
+        # C14 std
+        if 'C14' in df.columns:
+            df['magic_uid_C14_std'] = df.groupby('magic_uid')['C14'].transform('std')
+        
+        # Frequency encoding
+        uid_counts = df['magic_uid'].value_counts(normalize=True).to_dict()
+        df['magic_uid_freq'] = df['magic_uid'].map(uid_counts)
+        
+        # Nunique aggregations
+        if 'P_emaildomain' in df.columns:
+            df['magic_uid_email_nunique'] = df.groupby('magic_uid')['P_emaildomain'].transform('nunique')
+        if 'dist1' in df.columns:
+            df['magic_uid_dist1_nunique'] = df.groupby('magic_uid')['dist1'].transform('nunique')
+        if 'id_02' in df.columns:
+            df['magic_uid_id02_nunique'] = df.groupby('magic_uid')['id_02'].transform('nunique')
+        if 'C13' in df.columns:
+            df['magic_uid_C13_nunique'] = df.groupby('magic_uid')['C13'].transform('nunique')
+        
+        # V-column nunique
+        for v_col in ['V127', 'V136', 'V309', 'V307', 'V320']:
+            if v_col in df.columns:
+                df[f'magic_uid_{v_col}_nunique'] = df.groupby('magic_uid')[v_col].transform('nunique')
+        
+        # Outsider15 feature
+        if 'D1' in df.columns and 'D15' in df.columns:
+            df['outsider15'] = (np.abs(df['D1'] - df['D15']) > 3).astype(np.int8)
+        
+        df = df.drop(columns=['magic_uid', 'card1_addr1', 'day'], errors='ignore')
+        logger.info(f"  Created {len([c for c in df.columns if 'magic_uid' in c or c == 'outsider15'])} Magic UID features")
+        
+        return df
+
     def normalize_d_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """🔥 TOP 5% KAGGLE: Normalize D-columns"""
         logger.info("Normalizing D-columns...")
@@ -737,12 +798,13 @@ class IEEECISFraudTraining:
         
         # 🔥 TOP 5% Kaggle features
         uid_features = [c for c in df.columns if '_uid_' in c or '_uid2_' in c]
+        magic_uid_features = [c for c in df.columns if 'magic_uid' in c or c == 'outsider15']
         d_normalized_features = [c for c in df.columns if c.endswith('_normalized')]
         card_encoding_features = [c for c in df.columns if c.endswith('_FE')]
 
         # Combine all
         self.all_features = (base_features + velocity_features + freq_features + 
-                            uid_features + d_normalized_features + card_encoding_features)
+                            uid_features + magic_uid_features + d_normalized_features + card_encoding_features)
         self.all_features = [f for f in self.all_features if f in df.columns]
 
         logger.info(f"Total features: {len(self.all_features)}")
@@ -750,6 +812,7 @@ class IEEECISFraudTraining:
         logger.info(f"  Velocity: {len(velocity_features)}")
         logger.info(f"  Frequency: {len(freq_features)}")
         logger.info(f"  UID Aggregations (Top 5%): {len(uid_features)}")
+        logger.info(f"  Magic UID Features (1st Place 0.9677!): {len(magic_uid_features)}")
         logger.info(f"  D-Normalized (Top 5%): {len(d_normalized_features)}")
         logger.info(f"  Card Encoding (Top 5%): {len(card_encoding_features)}")
 
@@ -1139,6 +1202,9 @@ class IEEECISFraudTraining:
         
         # 🔥 TOP 5% KAGGLE: UID aggregation features (+2-4% AUC)
         df = self.create_uid_aggregation_features(df)
+        
+        # 🔥🔥🔥 1ST PLACE KAGGLE: Magic UID features (LB 0.9677!)
+        df = self.create_magic_uid_features(df)
         
         # 🔥 TOP 5% KAGGLE: Normalize D-columns
         df = self.normalize_d_columns(df)

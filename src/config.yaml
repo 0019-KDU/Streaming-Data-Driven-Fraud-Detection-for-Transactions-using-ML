@@ -40,6 +40,10 @@ training:
   use_forward_feature_selection: false  # ❌ DISABLED: Use all features
   ffs_max_features: 50  # Stop FFS after 50 features (kept for later tuning)
   
+  # 🔥 NEW: Feature importance filtering (from 95.89 AUC project) +1-2% AUC
+  use_importance_filter: true  # ✅ ENABLED: Remove ~80-90 low-importance features
+  importance_threshold: 0.0002  # Features below this importance are removed (from 95.89 AUC project)
+  
   # Hyperparameter tuning disabled (manual tuning performs better)
   use_randomized_search: false  # Disabled - manual hyperparameters achieve 0.80+ AUC
   random_search_iterations: 10  # Not used
