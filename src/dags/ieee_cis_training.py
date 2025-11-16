@@ -1281,6 +1281,34 @@ class IEEECISFraudTraining:
         logger.info(f"Removed {n_removed:,} outliers (>{threshold:.2f}) from {column} ({n_removed/n_before:.2%})")
         return df
     
+    def remove_c_column_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
+        """🔥 95.89 AUC Project: Remove C-column outliers (values > 500)"""
+        logger.info("Removing C-column outliers (>500)...")
+        c_cols = [c for c in df.columns if c.startswith('C') and c[1:].isdigit()]
+        n_before = len(df)
+        
+        for col in c_cols:
+            if col in df.columns:
+                df = df[df[col] <= 500]
+        
+        n_removed = n_before - len(df)
+        logger.info(f"  Removed {n_removed:,} rows with C-column values >500 ({n_removed/n_before:.2%})")
+        return df
+    
+    def remove_negative_d_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """🔥 95.89 AUC Project: Remove negative D-column values (invalid time deltas)"""
+        logger.info("Removing negative D-column values...")
+        d_cols = [c for c in df.columns if c.startswith('D') and c[1:].isdigit()]
+        n_before = len(df)
+        
+        for col in d_cols:
+            if col in df.columns:
+                df = df[df[col] >= 0]
+        
+        n_removed = n_before - len(df)
+        logger.info(f"  Removed {n_removed:,} rows with negative D-values ({n_removed/n_before:.2%})")
+        return df
+    
     def remove_correlated_features(self, X_train: pd.DataFrame, X_valid: pd.DataFrame, threshold: float = 0.95) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         🆕 PHASE 1 IMPROVEMENT #5: Remove highly correlated features
