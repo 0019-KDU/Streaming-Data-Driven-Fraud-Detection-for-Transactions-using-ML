@@ -34,13 +34,19 @@ training:
   force_cpu_only: true  # Skip GPU attempts, use CPU directly (for VMs without GPU)
   # SMOTE configuration for class imbalance handling
   use_smote: true
-  smote_sampling_strategy: 0.3  # 30% of majority class (less aggressive synthetic fraud sampling)
+  smote_sampling_strategy: 0.15  # 15% of majority class (reduced from 0.3 - less synthetic noise)
   
   # 🆕 PHASE 2 & 3: Advanced Techniques for 96%+ AUC (Top 5% Kaggle)
   use_forward_feature_selection: false  # ❌ DISABLED: Use all features
   ffs_max_features: 50  # Stop FFS after 50 features (kept for later tuning)
-  use_randomized_search: false  # ⚠️ DISABLED: Too slow (2-3 hours), use tuned defaults instead
-  random_search_iterations: 10  # Reduced to 10 for faster experimentation (was 50)
+  
+  # 🔥 OPTUNA HYPERPARAMETER TUNING (CRITICAL FOR 0.90+ AUC)
+  use_optuna_tuning: true  # ✅ ENABLED: Smart hyperparameter optimization
+  optuna_trials: 100  # 50=30min(0.82-0.85), 100=60min(0.85-0.88)⭐, 150=90min(0.88-0.91)
+  
+  # ⚠️ DEPRECATED: Use Optuna instead of RandomizedSearchCV
+  use_randomized_search: false  # Old method, kept for backward compatibility
+  random_search_iterations: 10  # Not used when Optuna is enabled
   # Alternate imbalance strategy: when true, training code should compute scale_pos_weight = n_legit / n_fraud
   scale_pos_weight_auto: true
   # Enable CV-based target encoding (k-fold target encoding) to avoid leakage
