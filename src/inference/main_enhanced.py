@@ -469,44 +469,15 @@ class EnhancedFraudDetectionInference:
 
     def add_features(self, df):
         """
-        Add engineered features EXACTLY matching training feature names
-
-        CRITICAL: Feature names must match training exactly:
-        - dt_is_weekend (not is_weekend)
-        - dt_is_night (not is_night)
-        - dt_hour (not transaction_hour)
-        - email_risky (not email_is_risky)
-        - log_TransactionAmt (not log_amt)
-        - sqrt_TransactionAmt (not sqrt_amt)
+        Minimal feature preparation - pipeline.transform() handles ALL feature engineering
+        
+        Updated for 0.9279 AUC model:
+        - NO pre-engineered features (dt_hour, dt_is_weekend, email_risky, etc.)
+        - Pipeline creates all 88 features (Magic UID, group aggregations, frequency/mean encoding)
+        - This method only ensures required raw columns exist
         """
-        # Temporal features - MATCH TRAINING NAMES EXACTLY
-        df = df.withColumn("dt_hour", hour(col("timestamp")))
-        df = df.withColumn("dt_wday", dayofweek(col("timestamp")))
-        df = df.withColumn("dt_day", dayofmonth(col("timestamp")))
-        df = df.withColumn("dt_is_weekend",
-                           when((col("dt_wday") == 1) | (col("dt_wday") == 7), 1).otherwise(0))
-        df = df.withColumn("dt_is_night",
-                           when((col("dt_hour") >= 22) | (col("dt_hour") <= 6), 1).otherwise(0))
-
-        # Amount features - MATCH TRAINING NAMES EXACTLY (USE REAL VALUES, NOT PLACEHOLDERS)
-        # Note: We compute these in Spark SQL but also recompute in pandas UDF for consistency
-        df = df.withColumn("log_TransactionAmt", lit(0.0))  # Placeholder, will be computed in UDF
-        df = df.withColumn("sqrt_TransactionAmt", lit(0.0))  # Placeholder, will be computed in UDF
-
-        # Email features - MATCH TRAINING NAMES EXACTLY
-        df = df.withColumn("email_match",
-                           when((col("P_emaildomain") == col("R_emaildomain")) &
-                                col("P_emaildomain").isNotNull(), 1).otherwise(0))
-
-        # CRITICAL: Use 'email_risky' NOT 'email_is_risky'
-        risky_domains_list = list(RISKY_DOMAINS)
-        df = df.withColumn("email_risky",
-                           when(col("P_emaildomain").isin(risky_domains_list), 1).otherwise(0))
-
-        generic_domains = ['gmail.com', 'yahoo.com', 'hotmail.com']
-        df = df.withColumn("email_is_generic",
-                           when(col("P_emaildomain").isin(generic_domains), 1).otherwise(0))
-
+        # No feature engineering needed - pipeline handles everything
+        # Just return the dataframe with raw IEEE-CIS columns
         return df
 
     def run_inference(self):
@@ -535,8 +506,6 @@ class EnhancedFraudDetectionInference:
         def predict_with_risk_udf(
             transaction_id: pd.Series,
             TransactionAmt: pd.Series,
-            log_TransactionAmt: pd.Series,
-            sqrt_TransactionAmt: pd.Series,
             card1: pd.Series,
             card2: pd.Series,
             card3: pd.Series,
@@ -547,24 +516,16 @@ class EnhancedFraudDetectionInference:
             addr2: pd.Series,
             P_emaildomain: pd.Series,
             R_emaildomain: pd.Series,
-            ProductCD: pd.Series,
-            dt_hour: pd.Series,
-            dt_wday: pd.Series,
-            dt_day: pd.Series,
-            dt_is_weekend: pd.Series,
-            dt_is_night: pd.Series,
-            email_match: pd.Series,
-            email_risky: pd.Series,
-            email_is_generic: pd.Series
+            ProductCD: pd.Series
         ) -> pd.DataFrame:
             """
-            Vectorized UDF for fraud prediction with FIXED feature engineering
+            Vectorized UDF for fraud prediction (Updated for 0.9279 AUC model)
 
-            CRITICAL FIXES:
-            1. Feature names match training exactly
-            2. VAE anomaly scores are computed
-            3. Real amount values (not placeholders)
-            4. Proper exception handling that doesn't approve fraudulent transactions
+            CRITICAL CHANGES:
+            1. Passes ONLY raw IEEE-CIS columns to pipeline.transform()
+            2. Pipeline handles ALL feature engineering (88 features)
+            3. No velocity features (disabled in training, not in 1st place solution)
+            4. Matches training pipeline exactly (Magic UID, group aggregations, frequency/mean encoding)
             """
             n = len(TransactionAmt)
 
@@ -576,116 +537,42 @@ class EnhancedFraudDetectionInference:
                     logger.error("Model bundle is None")
                     raise ValueError("Model not loaded")
 
-                # Build base input dataframe with EXACT training feature names
+                # 🔥 CRITICAL: Build RAW IEEE-CIS dataframe (pipeline handles ALL feature engineering)
+                # Training pipeline expects ONLY raw IEEE-CIS columns, not pre-engineered features
+                # The pipeline.transform() will create ALL 88 features automatically
+                import time
+                
                 input_df = pd.DataFrame({
+                    # Required: TransactionAmt + timestamp for feature engineering
                     'TransactionAmt': TransactionAmt.fillna(0).astype('float32'),
-                    'log_TransactionAmt': np.log1p(TransactionAmt.fillna(0)).astype('float32'),
-                    'sqrt_TransactionAmt': np.sqrt(TransactionAmt.fillna(0)).astype('float32'),
+                    'TransactionDT': pd.Series([time.time()] * n).astype('float64'),  # Unix timestamp
+                    
+                    # Card columns (required by pipeline)
                     'card1': card1.fillna(-1).astype('int32'),
                     'card2': card2.fillna(-1).astype('int32'),
                     'card3': card3.fillna(-1).astype('int32'),
                     'card4': card4.fillna("visa"),
                     'card5': card5.fillna(-1).astype('int32'),
                     'card6': card6.fillna("debit"),
+                    
+                    # Address columns (required by pipeline)
                     'addr1': addr1.fillna(-1).astype('int32'),
                     'addr2': addr2.fillna(-1).astype('int32'),
+                    
+                    # Email columns (required by pipeline)
                     'P_emaildomain': P_emaildomain.fillna("unknown"),
                     'R_emaildomain': R_emaildomain.fillna("unknown"),
+                    
+                    # Product column (required by pipeline)
                     'ProductCD': ProductCD.fillna("W"),
-                    'dt_hour': dt_hour.fillna(0).astype('int16'),
-                    'dt_wday': dt_wday.fillna(0).astype('int8'),
-                    'dt_day': dt_day.fillna(1).astype('int32'),
-                    'dt_is_weekend': dt_is_weekend.fillna(0).astype('int8'),
-                    'dt_is_night': dt_is_night.fillna(0).astype('int8'),
-                    'email_match': email_match.fillna(0).astype('int8'),
-                    'email_risky': email_risky.fillna(0).astype('int8'),
-                    'email_is_generic': email_is_generic.fillna(0).astype('int8'),
+                    
+                    # Fraud label (placeholder for pipeline compatibility)
+                    'isFraud': 0
                 })
-
-                # ✅ CRITICAL: Compute velocity features using Redis-backed distributed service
-                import time
-                import os
-                from velocity_service import VelocityFeatureService
-
-                current_time = time.time()
-
-                # Add timestamp column for velocity computation
-                input_df['timestamp'] = current_time
-
-                # Create velocity service instance with Redis support
-                # Each Spark worker shares Redis state (distributed tracking)
-                redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-                velocity_service = VelocityFeatureService(
-                    redis_url=redis_url,
-                    max_history_seconds=7 * 24 * 3600,  # 7 days
-                    use_fallback=True  # Enable local fallback on Redis failure
-                )
                 
-                # Create ATO detection service instance with Redis support
-                ato_service = ATODetectionService(
-                    redis_url=redis_url,
-                    history_days=90,  # 90-day behavioral history
-                    connection_timeout=2
-                )
-                
-                # Log service health on first use
-                velocity_health = velocity_service.health_check()
-                ato_health = ato_service.health_check()
-                if not velocity_health['redis_connected']:
-                    logger.warning(f"Velocity service health: {velocity_health}")
-                if not ato_health['redis_connected']:
-                    logger.warning(f"ATO service health: {ato_health}")
-                
-                # ✅ NEW: Multi-entity velocity features (card + user + device levels)
-                # This provides comprehensive fraud detection across:
-                # - Card-level: Traditional card+addr+email tracking
-                # - User-level: Detect multi-card fraud (same user, different cards)
-                # - Device-level: Detect fraud rings (same device, multiple accounts)
-                input_df_with_velocity = velocity_service.process_batch(input_df, multi_entity=True)
-
-                # Remove temporary timestamp column
-                input_df = input_df_with_velocity.drop(columns=['timestamp'], errors='ignore')
-                
-                # ✅ ACCOUNT TAKEOVER (ATO) DETECTION
-                # Analyze each transaction for ATO patterns (geo-velocity, device changes, etc.)
-                ato_risk_scores = []
-                ato_confidences = []
-                ato_flags = []
-                
-                for i in range(n):
-                    # Extract transaction data for ATO analysis
-                    transaction = {
-                        'card1': card1.iloc[i] if i < len(card1) else None,
-                        'TransactionAmt': TransactionAmt.iloc[i] if i < len(TransactionAmt) else 0.0,
-                    }
-                    
-                    # Extract optional fields (device, location, session)
-                    # These would come from enhanced data collection in production
-                    device_id = None  # TODO: Extract from transaction metadata
-                    device_type = None
-                    session_id = None
-                    latitude = None
-                    longitude = None
-                    
-                    # Perform ATO analysis
-                    ato_result = ato_service.analyze_transaction(
-                        transaction=transaction,
-                        latitude=latitude,
-                        longitude=longitude,
-                        device_id=device_id,
-                        device_type=device_type,
-                        session_id=session_id
-                    )
-                    
-                    # Store ATO detection results
-                    ato_risk_scores.append(ato_result['ato_risk_score'])
-                    ato_confidences.append(ato_result['ato_confidence'])
-                    ato_flags.append(1 if ato_result['ato_detected'] else 0)
-                
-                # Add ATO features to dataframe
-                input_df['ato_risk_score'] = ato_risk_scores
-                input_df['ato_confidence'] = ato_confidences
-                input_df['ato_detected'] = ato_flags
+                # ❌ VELOCITY FEATURES DISABLED (not used by 1st place solution, removed from training)
+                # Training achieved 0.9279 AUC-ROC without velocity features
+                # Pipeline will create all necessary features (Magic UID, group aggregations, etc.)
 
                 # Apply frequency encoding using pipeline
                 if pipeline is not None and hasattr(pipeline, 'transform'):
@@ -930,14 +817,12 @@ class EnhancedFraudDetectionInference:
                     "risk_factors": ["processing_error"] * n
                 })
 
-        # Apply predictions
+        # Apply predictions (pass only raw IEEE-CIS columns)
         prediction_df = feature_df.withColumn(
             "prediction_result",
             predict_with_risk_udf(
                 col("transaction_id"),
                 col("TransactionAmt"),
-                col("log_TransactionAmt"),
-                col("sqrt_TransactionAmt"),
                 col("card1"),
                 col("card2"),
                 col("card3"),
@@ -948,15 +833,7 @@ class EnhancedFraudDetectionInference:
                 col("addr2"),
                 col("P_emaildomain"),
                 col("R_emaildomain"),
-                col("ProductCD"),
-                col("dt_hour"),
-                col("dt_wday"),
-                col("dt_day"),
-                col("dt_is_weekend"),
-                col("dt_is_night"),
-                col("email_match"),
-                col("email_risky"),
-                col("email_is_generic")
+                col("ProductCD")
             )
         )
 
