@@ -2951,6 +2951,12 @@ class IEEECISFraudTraining:
         # 1st place solution achieves 0.9677 AUC without velocity features
         # df = self.calculate_velocity_features(df)
 
+        # 🔥 CRITICAL FIX: Reset index after outlier removal (prevents KFold index mismatch)
+        # After removing outliers, dataframe has non-contiguous indices (e.g., [0, 2, 5, 10, ...])
+        # KFold expects sequential indices (0, 1, 2, 3, ...), so we must reset
+        df = df.reset_index(drop=True)
+        logger.info(f"Reset index after outlier removal: {len(df):,} rows")
+
         # Chronological split BEFORE frequency encoding to prevent leakage
         split_ratio = self.config["data"]["ieee_cis"]["chronological_split_ratio"]
         split_idx = int(len(df) * split_ratio)
