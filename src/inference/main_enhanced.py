@@ -720,7 +720,12 @@ class EnhancedFraudDetectionInference:
                     # Generate meta-features from base models
                     meta_features = np.zeros((len(input_transformed), len(base_models)))
                     for idx, (name, base_model) in enumerate(base_models):
-                        meta_features[:, idx] = base_model.predict_proba(input_transformed)[:, 1]
+                        pred = base_model.predict_proba(input_transformed)
+                        if pred.ndim == 1:
+                            # Custom objective (Focal Loss) returns raw scores, apply sigmoid
+                            meta_features[:, idx] = 1.0 / (1.0 + np.exp(-pred))
+                        else:
+                            meta_features[:, idx] = pred[:, 1]
                     
                     # Get final prediction from meta-learner
                     probabilities = meta_model.predict_proba(meta_features)[:, 1]

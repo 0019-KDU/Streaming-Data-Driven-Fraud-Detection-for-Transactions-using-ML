@@ -1849,8 +1849,14 @@ class IEEECISFraudTraining:
             
             base_models.append(('LightGBM', lgbm_model))
             
-            # Log performance
-            y_valid_proba = lgbm_model.predict_proba(X_valid)[:, 1]
+            # Log performance (handle both standard and custom objective)
+            y_valid_pred = lgbm_model.predict_proba(X_valid)
+            if y_valid_pred.ndim == 1:
+                # Custom objective (Focal Loss) returns raw scores, apply sigmoid
+                y_valid_proba = 1.0 / (1.0 + np.exp(-y_valid_pred))
+            else:
+                # Standard objective returns probabilities
+                y_valid_proba = y_valid_pred[:, 1]
             auc_pr = average_precision_score(y_valid, y_valid_proba)
             logger.info(f"    LightGBM AUC-PR: {auc_pr:.4f}")
         
@@ -1888,9 +1894,20 @@ class IEEECISFraudTraining:
         
         for idx, (name, model) in enumerate(base_models):
             # Get predictions on training set (already fitted)
-            meta_train[:, idx] = model.predict_proba(X_train)[:, 1]
+            train_pred = model.predict_proba(X_train)
+            if train_pred.ndim == 1:
+                # Custom objective returns raw scores, apply sigmoid
+                meta_train[:, idx] = 1.0 / (1.0 + np.exp(-train_pred))
+            else:
+                meta_train[:, idx] = train_pred[:, 1]
+            
             # Get predictions on validation set
-            meta_valid[:, idx] = model.predict_proba(X_valid)[:, 1]
+            valid_pred = model.predict_proba(X_valid)
+            if valid_pred.ndim == 1:
+                # Custom objective returns raw scores, apply sigmoid
+                meta_valid[:, idx] = 1.0 / (1.0 + np.exp(-valid_pred))
+            else:
+                meta_valid[:, idx] = valid_pred[:, 1]
         
         # Train meta-learner (Logistic Regression)
         logger.info("  Training meta-learner (Logistic Regression)...")
