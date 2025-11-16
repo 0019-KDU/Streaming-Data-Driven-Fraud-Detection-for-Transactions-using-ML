@@ -1900,11 +1900,11 @@ class IEEECISFraudTraining:
         card_encoding_features = [c for c in df.columns if c.endswith('_FE')]
         magic_uid_features = [c for c in df.columns if 'magic_uid' in c or c == 'outsider15']
 
-        # Combine all
-        self.all_features = (base_features + amount_agg_features + velocity_features + 
+        # Combine all and deduplicate (magic_uid_freq is in both freq_features and magic_uid_features)
+        all_feature_lists = (base_features + amount_agg_features + velocity_features + 
                             freq_features + mean_features + uid_features + magic_uid_features +
                             d_normalized_features + card_encoding_features)
-        self.all_features = [f for f in self.all_features if f in df.columns]
+        self.all_features = list(dict.fromkeys([f for f in all_feature_lists if f in df.columns]))
 
         logger.info(f"Total features: {len(self.all_features)}")
         logger.info(f"  Base: {len(base_features)}")
