@@ -638,8 +638,10 @@ class IEEECISFraudTraining:
             df.loc[device_info_lower.str.contains('asus', case=False, regex=False), 'DeviceCorp'] = 'ASUS'
             df.loc[device_info_lower.str.contains('blade', case=False, regex=False), 'DeviceCorp'] = 'ZTE'
             
-            # Extract first part of device code
-            df['DeviceCorp'] = df['DeviceInfo'].astype('str').str.split(':', expand=True)[0].str.split('-', expand=True)[0].str.split(expand=True)[0]
+            # Extract first part of device code (for devices not yet categorized)
+            # Split by ':', take first part, then split by '-', take first, then split by space, take first
+            device_parts = df['DeviceInfo'].astype('str').str.split(':').str[0].str.split('-').str[0].str.split().str[0]
+            df['DeviceCorp'] = df['DeviceCorp'].fillna(device_parts)
             
             # Samsung variants (SM, GT, SGH all = SAMSUNG)
             df.loc[device_info.isin(['rv', 'SM', 'GT', 'SGH']), 'DeviceCorp'] = 'SAMSUNG'
