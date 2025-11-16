@@ -696,10 +696,10 @@ class IEEECISFraudTraining:
             # Parse resolution (e.g., "2220x1080")
             resolution = df['id_33'].fillna('0x0').astype(str)
             
-            # Extract width and height
-            resolution_split = resolution.str.split('x', expand=True)
-            df['screen_width'] = pd.to_numeric(resolution_split[0], errors='coerce').fillna(0).astype(np.int16)
-            df['screen_height'] = pd.to_numeric(resolution_split[1], errors='coerce').fillna(0).astype(np.int16)
+            # Extract width and height using .str[0] and .str[1] instead of expand=True
+            resolution_parts = resolution.str.split('x')
+            df['screen_width'] = pd.to_numeric(resolution_parts.str[0], errors='coerce').fillna(0).astype(np.int16)
+            df['screen_height'] = pd.to_numeric(resolution_parts.str[1], errors='coerce').fillna(0).astype(np.int16)
             
             # Screen area (total pixels)
             df['screen_area'] = (df['screen_width'] * df['screen_height']).astype(np.int32)
