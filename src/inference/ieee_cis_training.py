@@ -456,35 +456,35 @@ class IEEECISFraudTraining:
             uid_parts.append(df['addr1'].fillna(-999).astype(str))
         
         if len(uid_parts) >= 2:
-            df['uid_temp'] = uid_parts[0]
+            df['uid_agg'] = uid_parts[0]
             for p in uid_parts[1:]:
-                df['uid_temp'] = df['uid_temp'] + '_' + p
+                df['uid_agg'] = df['uid_agg'] + '_' + p
             
             if 'TransactionAmt' in df.columns:
-                uid_amt_agg = df.groupby('uid_temp')['TransactionAmt'].agg(['mean', 'std']).reset_index()
-                uid_amt_agg.columns = ['uid_temp', 'TransactionAmt_uid_mean', 'TransactionAmt_uid_std']
-                df = df.merge(uid_amt_agg, on='uid_temp', how='left')
+                uid_amt_agg = df.groupby('uid_agg')['TransactionAmt'].agg(['mean', 'std']).reset_index()
+                uid_amt_agg.columns = ['uid_agg', 'TransactionAmt_uid_mean', 'TransactionAmt_uid_std']
+                df = df.merge(uid_amt_agg, on='uid_agg', how='left')
             
             m_cols = ['M9', 'M5', 'M4', 'M1', 'M7', 'M8']
             for col in m_cols:
                 if col in df.columns:
-                    agg = df.groupby('uid_temp')[col].mean().reset_index()
-                    agg.columns = ['uid_temp', f'{col}_uid_mean']
-                    df = df.merge(agg, on='uid_temp', how='left')
+                    agg = df.groupby('uid_agg')[col].mean().reset_index()
+                    agg.columns = ['uid_agg', f'{col}_uid_mean']
+                    df = df.merge(agg, on='uid_agg', how='left')
             
             d_cols = ['D2', 'D15']
             for col in d_cols:
                 if col in df.columns:
-                    agg = df.groupby('uid_temp')[col].mean().reset_index()
-                    agg.columns = ['uid_temp', f'{col}_uid_mean']
-                    df = df.merge(agg, on='uid_temp', how='left')
+                    agg = df.groupby('uid_agg')[col].mean().reset_index()
+                    agg.columns = ['uid_agg', f'{col}_uid_mean']
+                    df = df.merge(agg, on='uid_agg', how='left')
             
             c_cols = ['C13', 'C9', 'C1', 'C11']
             for col in c_cols:
                 if col in df.columns:
-                    agg = df.groupby('uid_temp')[col].mean().reset_index()
-                    agg.columns = ['uid_temp', f'{col}_uid_mean']
-                    df = df.merge(agg, on='uid_temp', how='left')
+                    agg = df.groupby('uid_agg')[col].mean().reset_index()
+                    agg.columns = ['uid_agg', f'{col}_uid_mean']
+                    df = df.merge(agg, on='uid_agg', how='left')
             
             if 'card1' in df.columns and 'addr1' in df.columns:
                 df['uid2_temp'] = df['card1'].fillna(-999).astype(str) + '_' + df['addr1'].fillna(-999).astype(str)
@@ -496,7 +496,7 @@ class IEEECISFraudTraining:
                         df = df.merge(agg, on='uid2_temp', how='left')
                 df = df.drop(columns=['uid2_temp'])
             
-            df = df.drop(columns=['uid_temp'])
+            df = df.drop(columns=['uid_agg'])
             logger.info(f"  Created {len([c for c in df.columns if '_uid_' in c or '_uid2_' in c])} UID features")
         
         return df

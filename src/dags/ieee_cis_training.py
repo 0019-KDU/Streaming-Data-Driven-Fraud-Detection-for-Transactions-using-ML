@@ -895,39 +895,40 @@ class IEEECISFraudTraining:
             uid_parts.append(df['addr1'].fillna(-999).astype(str))
         
         if len(uid_parts) >= 2:
-            df['uid'] = uid_parts[0]
+            # Use temporary UID name to avoid overwriting the existing 'uid' column
+            df['uid_agg'] = uid_parts[0]
             for p in uid_parts[1:]:
-                df['uid'] = df['uid'] + '_' + p
+                df['uid_agg'] = df['uid_agg'] + '_' + p
             
             # 1. Transaction Amount aggregations per UID (most important!)
             if 'TransactionAmt' in df.columns:
-                uid_amt_agg = df.groupby('uid')['TransactionAmt'].agg(['mean', 'std']).reset_index()
-                uid_amt_agg.columns = ['uid', 'TransactionAmt_uid_mean', 'TransactionAmt_uid_std']
-                df = df.merge(uid_amt_agg, on='uid', how='left')
+                uid_amt_agg = df.groupby('uid_agg')['TransactionAmt'].agg(['mean', 'std']).reset_index()
+                uid_amt_agg.columns = ['uid_agg', 'TransactionAmt_uid_mean', 'TransactionAmt_uid_std']
+                df = df.merge(uid_amt_agg, on='uid_agg', how='left')
             
             # 2. M column aggregations (match features - names, addresses)
             m_cols_for_agg = ['M9', 'M5', 'M4', 'M1', 'M7', 'M8']
             for col in m_cols_for_agg:
                 if col in df.columns:
-                    uid_m_agg = df.groupby('uid')[col].agg(['mean']).reset_index()
-                    uid_m_agg.columns = ['uid', f'{col}_uid_mean']
-                    df = df.merge(uid_m_agg, on='uid', how='left')
+                    uid_m_agg = df.groupby('uid_agg')[col].agg(['mean']).reset_index()
+                    uid_m_agg.columns = ['uid_agg', f'{col}_uid_mean']
+                    df = df.merge(uid_m_agg, on='uid_agg', how='left')
             
             # 3. D column aggregations (time deltas)
             d_cols_for_agg = ['D2', 'D15']
             for col in d_cols_for_agg:
                 if col in df.columns:
-                    uid_d_agg = df.groupby('uid')[col].agg(['mean']).reset_index()
-                    uid_d_agg.columns = ['uid', f'{col}_uid_mean']
-                    df = df.merge(uid_d_agg, on='uid', how='left')
+                    uid_d_agg = df.groupby('uid_agg')[col].agg(['mean']).reset_index()
+                    uid_d_agg.columns = ['uid_agg', f'{col}_uid_mean']
+                    df = df.merge(uid_d_agg, on='uid_agg', how='left')
             
             # 4. C column aggregations (counting features)
             c_cols_for_agg = ['C13', 'C9', 'C1', 'C11']
             for col in c_cols_for_agg:
                 if col in df.columns:
-                    uid_c_agg = df.groupby('uid')[col].agg(['mean']).reset_index()
-                    uid_c_agg.columns = ['uid', f'{col}_uid_mean']
-                    df = df.merge(uid_c_agg, on='uid', how='left')
+                    uid_c_agg = df.groupby('uid_agg')[col].agg(['mean']).reset_index()
+                    uid_c_agg.columns = ['uid_agg', f'{col}_uid_mean']
+                    df = df.merge(uid_c_agg, on='uid_agg', how='left')
             
             # 5. Alternative UID: card1 + addr1 (simpler, handles missing D1)
             uid2_parts = []
@@ -950,8 +951,8 @@ class IEEECISFraudTraining:
                 # Drop uid2 (only needed for aggregation)
                 df = df.drop(columns=['uid2'])
             
-            # Drop uid (only needed for aggregation)
-            df = df.drop(columns=['uid'])
+            # Drop temporary aggregation uid (keep original 'uid' for velocity features!)
+            df = df.drop(columns=['uid_agg'])
             
             uid_features = [c for c in df.columns if '_uid_' in c or '_uid2_' in c]
             logger.info(f"  Created {len(uid_features)} UID-based aggregation features")

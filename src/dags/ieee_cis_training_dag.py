@@ -29,7 +29,7 @@ default_args = {
     'email': ['chirantharavishka@gmail.com'],
     'email_on_failure': True,
     'email_on_retry': False,
-    'retries': 1,
+    'retries': 0,  # Disabled: No automatic retries on failure
     'retry_delay': timedelta(minutes=5),
     'execution_timeout': timedelta(hours=2),
 }
@@ -125,7 +125,7 @@ with DAG(
     dag_id='ieee_cis_fraud_detection_training',
     default_args=default_args,
     description='Train fraud detection model on IEEE-CIS dataset',
-    schedule_interval='0 3 * * *',  # Daily at 3:00 AM
+    schedule_interval=None,  # Manual trigger only (disabled automatic schedule)
     start_date=datetime(2025, 1, 1),
     catchup=False,
     max_active_runs=1,  # Prevent concurrent training runs
