@@ -711,8 +711,22 @@ class EnhancedFraudDetectionInference:
                 if calibrated_model is None:
                     raise ValueError("Calibrated model not found in bundle")
 
-                # Get probabilities
-                probabilities = calibrated_model.predict_proba(input_transformed)[:, 1]
+                # Get probabilities (handle both single models and stacked ensembles)
+                if isinstance(calibrated_model, dict) and calibrated_model.get('type') == 'stacked_ensemble':
+                    # 🔥 STACKED ENSEMBLE: Get predictions from all base models + meta-learner
+                    base_models = calibrated_model['base_models']
+                    meta_model = calibrated_model['meta_model']
+                    
+                    # Generate meta-features from base models
+                    meta_features = np.zeros((len(input_transformed), len(base_models)))
+                    for idx, (name, base_model) in enumerate(base_models):
+                        meta_features[:, idx] = base_model.predict_proba(input_transformed)[:, 1]
+                    
+                    # Get final prediction from meta-learner
+                    probabilities = meta_model.predict_proba(meta_features)[:, 1]
+                else:
+                    # Single model (calibrated or uncalibrated)
+                    probabilities = calibrated_model.predict_proba(input_transformed)[:, 1]
 
                 # RULE-BASED OVERRIDES: Flag obvious fraud patterns even if model probability is low
                 # This addresses model threshold being too conservative
