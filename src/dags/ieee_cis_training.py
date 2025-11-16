@@ -837,27 +837,27 @@ class IEEECISFraudTraining:
         
         # 🔥 Card-Address patterns (stolen cards used at different addresses)
         if 'card1' in df.columns and 'addr1' in df.columns:
-            # Count unique addresses per card
-            df['card1_addr1_count'] = df.groupby('card1')['addr1'].transform('nunique').astype('int16')
+            # Count unique addresses per card (fillna to handle missing values)
+            df['card1_addr1_count'] = df.groupby('card1')['addr1'].transform('nunique').fillna(0).astype('int16')
             df['card1_multiple_addr'] = (df['card1_addr1_count'] > 1).astype(np.int8)
             
             # Count cards per address (fraud rings use same address)
-            df['addr1_card1_count'] = df.groupby('addr1')['card1'].transform('nunique').astype('int16')
+            df['addr1_card1_count'] = df.groupby('addr1')['card1'].transform('nunique').fillna(0).astype('int16')
             df['addr1_multiple_cards'] = (df['addr1_card1_count'] > 3).astype(np.int8)
         
         # 🔥 Card-Device patterns (stolen cards on different devices)
         if 'card1' in df.columns and 'DeviceInfo' in df.columns:
-            df['card1_device_count'] = df.groupby('card1')['DeviceInfo'].transform('nunique').astype('int16')
+            df['card1_device_count'] = df.groupby('card1')['DeviceInfo'].transform('nunique').fillna(0).astype('int16')
             df['card1_multiple_devices'] = (df['card1_device_count'] > 1).astype(np.int8)
         
         # 🔥 Email-Card patterns (one email, multiple cards = suspicious)
         if 'card1' in df.columns and 'P_emaildomain' in df.columns:
-            df['email_card1_count'] = df.groupby('P_emaildomain')['card1'].transform('nunique').astype('int16')
+            df['email_card1_count'] = df.groupby('P_emaildomain')['card1'].transform('nunique').fillna(0).astype('int16')
             df['email_multiple_cards'] = (df['email_card1_count'] > 2).astype(np.int8)
         
         # 🔥 Card-ProductCD patterns (fraud cards buy specific products)
         if 'card1' in df.columns and 'ProductCD' in df.columns:
-            df['card1_product_count'] = df.groupby('card1')['ProductCD'].transform('nunique').astype('int8')
+            df['card1_product_count'] = df.groupby('card1')['ProductCD'].transform('nunique').fillna(0).astype('int8')
             df['card1_single_product'] = (df['card1_product_count'] == 1).astype(np.int8)
         
         # 🔥 Combine network risk signals
