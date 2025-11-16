@@ -2518,9 +2518,9 @@ class IEEECISFraudTraining:
         # 🔥 NEW: Interaction features (+1-2% AUC)
         df = self.create_interaction_features(df)
         
-        # 🔥 NEW: Multi-window velocity features (+3-4% AUC)
-        logger.info("⚠️ Multi-window velocity disabled (too slow). Re-enable in config for production.")
-        # df = self.create_multi_window_velocity(df)  # Uncomment for production (adds 20-30 min)
+        # 🔥 NEW: Multi-window velocity features (+3-4% AUC) - ENABLED for performance boost
+        logger.info("Enabling multi-window velocity features (expect +20-30 min training time)...")
+        df = self.create_multi_window_velocity(df)
         
         # 🔥 NEW: Network pattern features (+2-3% AUC)
         df = self.create_network_features(df)
