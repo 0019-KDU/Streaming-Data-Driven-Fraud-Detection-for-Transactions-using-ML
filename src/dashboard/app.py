@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
-    page_title="Fraud Detection Dashboard - Enhanced",
-    page_icon="🛡️",
+    page_title="Bank Fraud Detection System - Real-time Monitoring",
+    page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -206,24 +206,35 @@ def format_transaction_row(txn: Dict[str, Any]) -> Dict[str, Any]:
     risk_factors = txn.get('risk_factors', 'none')
     
     # Check for ATO
-    is_ato = 'ACCOUNT_TAKEOVER' in risk_factors
+    is_ato = 'ACCOUNT_TAKEOVER' in risk_factors or 'ato_' in risk_factors.lower()
     ato_badge = '🚨 ATO' if is_ato else ''
     
     # Check for velocity
     has_velocity = 'velocity' in risk_factors.lower()
     velocity_badge = '⚡' if has_velocity else ''
     
+    # Check for email risk
+    has_email_risk = 'email' in risk_factors.lower()
+    email_badge = '📧' if has_email_risk else ''
+    
+    # Get card info
+    card = txn.get('card', txn.get('card1', 'N/A'))
+    card_type = txn.get('card_type', txn.get('card4', 'N/A'))
+    email_domain = txn.get('email_domain', txn.get('P_emaildomain', 'N/A'))
+    product = txn.get('product', txn.get('ProductCD', 'N/A'))
+    
     return {
-        'Transaction ID': txn.get('transaction_id', 'N/A'),
-        'Type': txn.get('type', 'UNKNOWN'),
+        'Time': txn.get('timestamp', 'N/A')[:19] if isinstance(txn.get('timestamp'), str) else 'N/A',
+        'TX ID': txn.get('transaction_id', 'N/A')[:12],
         'Decision': txn.get('decision', 'N/A'),
-        'Risk Level': txn.get('risk_level', 'N/A'),
-        'Probability': f"{txn.get('probability', 0.0):.3f}",
+        'Risk': txn.get('risk_level', 'N/A'),
+        'Prob': f"{txn.get('probability', 0.0):.3f}",
         'Amount': f"${txn.get('amount', 0.0):.2f}",
-        'Flags': f"{ato_badge} {velocity_badge}".strip(),
-        'Timestamp': txn.get('timestamp', 'N/A'),
-        'User ID': txn.get('user_id', 'N/A'),
-        'Risk Factors': risk_factors[:50] + '...' if len(risk_factors) > 50 else risk_factors
+        'Card': f"{card} ({card_type})",
+        'Email': email_domain[:20] if email_domain else 'N/A',
+        'Product': product,
+        'Alerts': f"{ato_badge} {velocity_badge} {email_badge}".strip() or '—',
+        'Risk Factors': risk_factors[:80] + '...' if len(risk_factors) > 80 else risk_factors
     }
 
 
@@ -274,7 +285,8 @@ def main():
     """Main dashboard application"""
 
     # Title and header
-    st.title("🛡️ Real-time Fraud Detection Dashboard")
+    st.title("🏦 Bank Fraud Detection System - Real-time Monitoring")
+    st.caption("🤖 ML-Powered Fraud Detection with ATO Prevention & Hybrid Adaptive Thresholds")
     st.markdown("---")
 
     # Initialize Kafka consumers
