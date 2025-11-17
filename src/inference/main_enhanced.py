@@ -394,6 +394,8 @@ class EnhancedFraudDetectionInference:
             StructField("card6", StringType(), True),
             StructField("addr1", IntegerType(), True),
             StructField("addr2", IntegerType(), True),
+            StructField("dist1", DoubleType(), True),
+            StructField("dist2", DoubleType(), True),
             StructField("P_emaildomain", StringType(), True),
             StructField("R_emaildomain", StringType(), True),
         ])
@@ -458,6 +460,8 @@ class EnhancedFraudDetectionInference:
         df = df.withColumn("card6", coalesce(col("card6"), lit("debit")))
         df = df.withColumn("addr1", coalesce(col("addr1"), lit(-1)))
         df = df.withColumn("addr2", coalesce(col("addr2"), lit(-1)))
+        df = df.withColumn("dist1", coalesce(col("dist1"), lit(-1.0)))
+        df = df.withColumn("dist2", coalesce(col("dist2"), lit(-1.0)))
         df = df.withColumn("P_emaildomain", coalesce(col("P_emaildomain"), lit(None)))
         df = df.withColumn("R_emaildomain", coalesce(col("R_emaildomain"), lit(None)))
         df = df.withColumn("ProductCD", coalesce(col("ProductCD"), lit("W")))
