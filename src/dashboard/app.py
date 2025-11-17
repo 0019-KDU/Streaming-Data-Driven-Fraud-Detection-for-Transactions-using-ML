@@ -458,17 +458,29 @@ def main():
         recent_txns = list(st.session_state.transactions)[-max_display:]
         recent_txns.reverse()  # Show newest first
 
-        df = pd.DataFrame([format_transaction_row(txn) for txn in recent_txns])
+        # Create DataFrame with transaction type for styling
+        df_data = []
+        for txn in recent_txns:
+            row = format_transaction_row(txn)
+            row['_type'] = txn.get('type', 'UNKNOWN')  # Hidden column for styling
+            df_data.append(row)
+        
+        df = pd.DataFrame(df_data)
 
-        # Style the dataframe
-        def highlight_fraud(row):
-            if row['Type'] == 'FRAUD':
+        # Style the dataframe based on decision
+        def highlight_decision(row):
+            decision = row.get('Decision', 'UNKNOWN')
+            if decision == 'BLOCK':
                 return ['background-color: #ffe6e6'] * len(row)
-            elif row['Type'] == 'LEGIT':
+            elif decision == 'APPROVE':
                 return ['background-color: #e6ffe6'] * len(row)
+            elif decision == 'HOLD' or decision == 'REVIEW':
+                return ['background-color: #fff8e6'] * len(row)
             return [''] * len(row)
 
-        styled_df = df.style.apply(highlight_fraud, axis=1)
+        # Drop the hidden _type column before display
+        display_df = df.drop(columns=['_type']) if '_type' in df.columns else df
+        styled_df = display_df.style.apply(highlight_decision, axis=1)
 
         st.dataframe(styled_df, use_container_width=True, height=400)
 
