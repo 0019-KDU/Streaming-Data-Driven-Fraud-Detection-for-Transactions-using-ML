@@ -458,6 +458,10 @@ class IEEECISFraudTraining:
                 card1_std = df.groupby('card1')['TransactionAmt'].transform('std')
                 df['TransactionAmt_to_mean_card1'] = (df['TransactionAmt'] / (card1_mean + 1e-5)).astype('float32')
                 df['TransactionAmt_to_std_card1'] = (df['TransactionAmt'] / (card1_std + 1e-5)).astype('float32')
+                
+                # Save aggregation statistics for production pipeline
+                self.feature_pipeline.card1_amt_mean = df.groupby('card1')['TransactionAmt'].mean().to_dict()
+                self.feature_pipeline.card1_amt_std = df.groupby('card1')['TransactionAmt'].std().fillna(50).to_dict()
             
             # Card4 aggregations
             if 'card4' in df.columns:
@@ -465,6 +469,10 @@ class IEEECISFraudTraining:
                 card4_std = df.groupby('card4')['TransactionAmt'].transform('std')
                 df['TransactionAmt_to_mean_card4'] = (df['TransactionAmt'] / (card4_mean + 1e-5)).astype('float32')
                 df['TransactionAmt_to_std_card4'] = (df['TransactionAmt'] / (card4_std + 1e-5)).astype('float32')
+                
+                # Save aggregation statistics for production pipeline
+                self.feature_pipeline.card4_amt_mean = df.groupby('card4')['TransactionAmt'].mean().to_dict()
+                self.feature_pipeline.card4_amt_std = df.groupby('card4')['TransactionAmt'].std().fillna(50).to_dict()
             
             # D15 aggregations (if exists)
             if 'D15' in df.columns:

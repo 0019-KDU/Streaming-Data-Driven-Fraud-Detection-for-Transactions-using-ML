@@ -64,7 +64,78 @@ class IEEECISFeaturePipeline:
         Returns:
             Transformed dataframe with all engineered features
         """
+        import numpy as np
         df = df.copy()
+
+        # ========== AMOUNT FEATURES ==========
+        if 'TransactionAmt' in df.columns:
+            df['TransactionAmt'] = df['TransactionAmt'].astype('float32')
+            df['log_TransactionAmt'] = np.log1p(df['TransactionAmt'].fillna(0)).astype('float32')
+            df['sqrt_TransactionAmt'] = np.sqrt(df['TransactionAmt'].fillna(0)).astype('float32')
+            df['TransactionAmt_decimal'] = ((df['TransactionAmt'] - df['TransactionAmt'].astype(int)) * 1000).astype('int16')
+            
+            # Card aggregations (use pre-computed statistics from training)
+            if 'card1' in df.columns and hasattr(self, 'card1_amt_mean'):
+                df['TransactionAmt_to_mean_card1'] = (df['TransactionAmt'] / (df['card1'].map(self.card1_amt_mean).fillna(100) + 1e-5)).astype('float32')
+                df['TransactionAmt_to_std_card1'] = (df['TransactionAmt'] / (df['card1'].map(self.card1_amt_std).fillna(50) + 1e-5)).astype('float32')
+            else:
+                df['TransactionAmt_to_mean_card1'] = 1.0
+                df['TransactionAmt_to_std_card1'] = 1.0
+            
+            if 'card4' in df.columns and hasattr(self, 'card4_amt_mean'):
+                df['TransactionAmt_to_mean_card4'] = (df['TransactionAmt'] / (df['card4'].map(self.card4_amt_mean).fillna(100) + 1e-5)).astype('float32')
+                df['TransactionAmt_to_std_card4'] = (df['TransactionAmt'] / (df['card4'].map(self.card4_amt_std).fillna(50) + 1e-5)).astype('float32')
+            else:
+                df['TransactionAmt_to_mean_card4'] = 1.0
+                df['TransactionAmt_to_std_card4'] = 1.0
+
+        # ========== EMAIL FEATURES ==========
+        RISKY_DOMAINS = {
+            'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
+            'yopmail.com', '10minutemail.com', 'guerrillamail.com'
+        }
+        HIGH_RISK_DOMAINS = {
+            'protonmail.com', 'guerrillamail.com', 'mailinator.com',
+            '10minutemail.com', 'tempmail.com', 'throwaway.email',
+            'yopmail.com', 'sharklasers.com', 'guerrillamail.info',
+            'dispostable.com', 'trashmail.com'
+        }
+        
+        if 'P_emaildomain' in df.columns:
+            df['email_risky'] = df['P_emaildomain'].isin(RISKY_DOMAINS).astype('int8')
+            df['email_is_generic'] = df['P_emaildomain'].isin(['gmail.com', 'yahoo.com', 'hotmail.com']).astype('int8')
+            df['is_high_risk_email'] = df['P_emaildomain'].isin(HIGH_RISK_DOMAINS).astype('int8')
+            df['is_disposable_email'] = df['P_emaildomain'].fillna('').astype(str).str.contains(
+                'temp|disposable|guerrilla|throwaway|fake|spam|trash', case=False, regex=True
+            ).astype('int8')
+            df['email_domain_length'] = df['P_emaildomain'].fillna('').str.len().astype('int8')
+            df['email_is_short_domain'] = (df['email_domain_length'] <= 8).astype('int8')
+        
+        if 'P_emaildomain' in df.columns and 'R_emaildomain' in df.columns:
+            df['email_match'] = (df['P_emaildomain'] == df['R_emaildomain']).fillna(False).astype('int8')
+
+        # ========== CARD FEATURES ==========
+        if 'card4' in df.columns:
+            df['card_is_discover'] = (df['card4'] == 'discover').astype('int8')
+            df['card_is_amex'] = (df['card4'] == 'american express').astype('int8')
+        
+        if 'card6' in df.columns:
+            df['card_is_charge'] = (df['card6'] == 'charge card').astype('int8')
+        
+        if 'ProductCD' in df.columns:
+            df['product_is_C'] = (df['ProductCD'] == 'C').astype('int8')
+            df['product_is_R'] = (df['ProductCD'] == 'R').astype('int8')
+
+        # ========== DISTANCE FEATURES ==========
+        if 'dist1' in df.columns:
+            df['dist1_filled'] = df['dist1'].fillna(0).astype('float32')
+            df['has_dist1'] = (~df['dist1'].isna()).astype('int8')
+            df['dist1_high'] = (df['dist1'].fillna(0) > 1000).astype('int8')
+        
+        if 'dist2' in df.columns:
+            df['dist2_filled'] = df['dist2'].fillna(0).astype('float32')
+            df['has_dist2'] = (~df['dist2'].isna()).astype('int8')
+            df['dist2_high'] = (df['dist2'].fillna(0) > 1000).astype('int8')
 
         # Apply frequency encoding
         for col, freq_map in self.freq_maps.items():
