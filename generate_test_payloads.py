@@ -29,21 +29,12 @@ def generate_test_payloads():
     print(f"✅ Loaded {len(df):,} transactions")
     print(f"📊 Columns: {list(df.columns)[:20]}...")  # Show first 20 columns
     
-    # Required columns for our API
-    required_cols = [
-        'TransactionAmt', 'ProductCD', 
-        'card1', 'card2', 'card3', 'card4', 'card5', 'card6',
-        'addr1', 'addr2', 'dist1', 'dist2',
-        'P_emaildomain', 'R_emaildomain'
-    ]
+    # Use ALL columns from CSV (except TransactionID and TransactionDT which are metadata)
+    exclude_cols = ['TransactionID', 'TransactionDT']
+    available_cols = [col for col in df.columns if col not in exclude_cols]
     
-    # Check which columns exist
-    available_cols = [col for col in required_cols if col in df.columns]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    
-    print(f"\n✅ Available columns: {len(available_cols)}/{len(required_cols)}")
-    if missing_cols:
-        print(f"⚠️  Missing columns: {missing_cols}")
+    print(f"\n✅ Using ALL {len(available_cols)} columns from test dataset")
+    print(f"📊 This includes: C1-C14, D1-D15, M1-M9, V1-V339, and all transaction fields")
     
     # Strategy: Pick diverse transactions
     print("\n🎯 Selecting diverse test cases...")
@@ -85,28 +76,39 @@ def generate_test_payloads():
     for idx, (name, row) in enumerate(test_cases, 1):
         payload = {}
         
-        # Add available columns
+        # Add ALL available columns with proper type handling
         for col in available_cols:
             value = row[col]
             
-            # Handle NaN values
+            # Handle NaN values based on column type
             if pd.isna(value):
-                if col in ['TransactionAmt', 'dist1', 'dist2']:
+                # Numeric columns (V-features, C-features, D-features, amounts, distances)
+                if col.startswith('V') or col.startswith('C') or col.startswith('D') or \
+                   col in ['TransactionAmt', 'dist1', 'dist2', 'card2', 'card3', 'card5', 'addr2']:
                     payload[col] = 0.0
-                elif col in ['card1', 'card2', 'card3', 'card5', 'addr1', 'addr2']:
+                # ID columns (card1, addr1)
+                elif col in ['card1', 'addr1']:
                     payload[col] = -1
-                elif col in ['card4', 'card6', 'ProductCD']:
+                # M-features (binary match indicators)
+                elif col.startswith('M'):
+                    payload[col] = 0
+                # Categorical columns
+                elif col in ['card4', 'card6', 'ProductCD', 'P_emaildomain', 'R_emaildomain']:
                     payload[col] = "unknown"
-                elif col in ['P_emaildomain', 'R_emaildomain']:
-                    payload[col] = "unknown"
+                else:
+                    payload[col] = None
             else:
                 # Convert numpy types to Python types for JSON serialization
                 if isinstance(value, (np.integer, np.int64, np.int32)):
                     payload[col] = int(value)
                 elif isinstance(value, (np.floating, np.float64, np.float32)):
-                    payload[col] = float(value)
+                    # Check for NaN in floats
+                    if np.isnan(value):
+                        payload[col] = 0.0
+                    else:
+                        payload[col] = float(value)
                 else:
-                    payload[col] = value
+                    payload[col] = str(value) if value is not None else "unknown"
         
         # Save to JSON file
         filename = f"TEST_{idx:02d}_{name}.json"

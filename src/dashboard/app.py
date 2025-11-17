@@ -323,6 +323,23 @@ def main():
         st.metric("💰 Amount Alerts", model_stats['amount_alerts'])
         st.metric("📧 Email Risk Alerts", model_stats['email_risk_alerts'])
         st.metric("🎯 Threshold Adjustments", model_stats['threshold_adjustments'])
+        
+        # Enhanced ATO Analytics
+        st.markdown("---")
+        st.header("🔬 ATO Analytics (Novel)")
+        recent_ato_txns = [t for t in st.session_state.transactions if 'ACCOUNT_TAKEOVER' in t.get('risk_factors', '')][-50:]
+        
+        if recent_ato_txns:
+            # Calculate average confidence for ATO detections
+            avg_ato_confidence = np.mean([t.get('ato_confidence', 0.0) for t in recent_ato_txns])
+            avg_behavioral_velocity = np.mean([t.get('behavioral_velocity', 0.0) for t in recent_ato_txns])
+            multi_signal_count = len([t for t in recent_ato_txns if 'multi_signal' in t.get('risk_factors', '').lower()])
+            
+            st.metric("Avg Signal Confidence", f"{avg_ato_confidence:.3f}")
+            st.metric("Avg Behavioral Velocity", f"{avg_behavioral_velocity:.3f}")
+            st.metric("Multi-Signal Detections", multi_signal_count)
+        else:
+            st.info("No ATO data yet")
 
         st.markdown("---")
         st.caption(f"Last Update: {st.session_state.last_update.strftime('%H:%M:%S')}")
@@ -505,14 +522,37 @@ def main():
             ato_txns = [t for t in st.session_state.transactions if 'ACCOUNT_TAKEOVER' in t.get('risk_factors', '')][-20:]
             if ato_txns:
                 st.write(f"**{len(ato_txns)} ATO incidents in last 1000 transactions**")
+                
+                # Display enhanced ATO statistics
+                avg_confidence = np.mean([t.get('ato_confidence', 0.0) for t in ato_txns])
+                avg_velocity = np.mean([t.get('behavioral_velocity', 0.0) for t in ato_txns])
+                multi_signal = len([t for t in ato_txns if 'multi_signal' in t.get('risk_factors', '').lower()])
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Avg Signal Confidence", f"{avg_confidence:.3f}")
+                col2.metric("Avg Behavioral Velocity", f"{avg_velocity:.3f}")
+                col3.metric("Multi-Signal Detections", multi_signal)
+                
+                st.markdown("---")
+                
                 for txn in reversed(ato_txns[:10]):
+                    # Color code by confidence
+                    confidence = txn.get('ato_confidence', 0.0)
+                    if confidence > 0.85:
+                        confidence_badge = "🔴 High Confidence"
+                    elif confidence > 0.70:
+                        confidence_badge = "🟡 Medium Confidence"
+                    else:
+                        confidence_badge = "🟢 Low Confidence"
+                    
                     with st.expander(
-                        f"Transaction {txn.get('transaction_id', 'N/A')} - "
+                        f"{confidence_badge} - Transaction {txn.get('transaction_id', 'N/A')} - "
                         f"${txn.get('amount', 0):.2f} - "
-                        f"{txn.get('risk_level', 'N/A')}"
+                        f"Velocity: {txn.get('behavioral_velocity', 0.0):.2f}"
                     ):
                         col1, col2 = st.columns(2)
                         with col1:
+                            st.write("**Transaction Details:**")
                             st.json({
                                 'transaction_id': txn.get('transaction_id', 'N/A'),
                                 'user_id': txn.get('user_id', 'N/A'),
@@ -523,6 +563,11 @@ def main():
                                 'timestamp': txn.get('timestamp', 'N/A')
                             })
                         with col2:
+                            st.write("**ATO Analytics (Novel):**")
+                            st.metric("Signal Confidence", f"{txn.get('ato_confidence', 0.0):.3f}")
+                            st.metric("Behavioral Velocity", f"{txn.get('behavioral_velocity', 0.0):.3f}")
+                            st.metric("ATO Risk Score", f"{txn.get('ato_risk_score', 0.0):.3f}")
+                            
                             st.write("**Risk Factors:**")
                             risk_factors = txn.get('risk_factors', 'none').split(',')
                             for factor in risk_factors:

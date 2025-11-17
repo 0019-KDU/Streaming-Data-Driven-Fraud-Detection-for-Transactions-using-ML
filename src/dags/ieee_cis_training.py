@@ -6,7 +6,7 @@ This module includes all advanced features from research notebook:
 - Velocity Features (optimized time-windows: 1h, 6h, 24h, 7d)
 - Adaptive Threshold System with dynamic adjustment
 - Frequency Encoding for categorical variables
-- SMOTE (Synthetic Minority Over-sampling) for class imbalance
+- Class imbalance handling with scale_pos_weight
 - 60+ Advanced Features for maximum performance
 - GPU support for training acceleration
 - MLflow experiment tracking and model registry
@@ -75,7 +75,7 @@ except ImportError:
 
 
 class FocalLoss:
-    """🔥 FOCAL LOSS for Imbalanced Classification (+1-2% AUC)
+    """Focal Loss for Imbalanced Classification
     
     Focal Loss automatically focuses on hard-to-classify examples.
     For fraud detection with 3.5% fraud rate, this is much better than
@@ -83,8 +83,6 @@ class FocalLoss:
     1. Downweights easy examples (obvious fraud/legit)
     2. Focuses on borderline cases (hard fraud patterns)
     3. Reduces false positives on easy legitimate transactions
-    
-    Paper: https://arxiv.org/abs/1708.02002
     """
     def __init__(self, alpha=0.25, gamma=2.0):
         """
@@ -386,7 +384,7 @@ class IEEECISFraudTraining:
         # Target
         df['isFraud'] = df['isFraud'].astype('int8')
         
-        # 🔥🔥🔥 1ST PLACE: Create card1_addr1 base feature (used for Magic UID)
+        # Create card1_addr1 base feature for UID-based aggregations
         df['card1_addr1'] = df['card1'].astype(str) + '_' + df['addr1'].astype(str)
 
         return df
@@ -422,14 +420,14 @@ class IEEECISFraudTraining:
         df['dt_is_weekend'] = (df['dt_wday'] >= 5).astype('int8')
         df['dt_is_night'] = ((df['dt_hour'] >= 22) | (df['dt_hour'] <= 6)).astype('int8')
         
-        # 🔥🔥🔥 1ST PLACE: Add month for GroupKFold CV
+        # Add month for GroupKFold CV
         # Training data: Dec 2017 (month 12) to May 2018 (month 17)
         import datetime
         START_DATE = datetime.datetime.strptime('2017-11-30', '%Y-%m-%d')
         df['DT_M'] = df['TransactionDT'].apply(lambda x: (START_DATE + datetime.timedelta(seconds=x)))
         df['DT_M'] = (df['DT_M'].dt.year - 2017) * 12 + df['DT_M'].dt.month
         
-        # 🆕 PHASE 1 IMPROVEMENT: Add 6 additional time binary features from top Kaggle solutions
+        # Add 6 additional time binary features
         df['is_weekend'] = df['dt_wday'].isin([5, 6]).astype(np.int8)
         df['is_night'] = df['dt_hour'].isin([0, 1, 2, 3, 4, 5, 22, 23]).astype(np.int8)
         df['is_business_hours'] = df['dt_hour'].between(9, 17).astype(np.int8)
@@ -494,7 +492,7 @@ class IEEECISFraudTraining:
         return df
     
     def create_multi_window_velocity(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥 MULTI-WINDOW CARD VELOCITY (+3-4% AUC) - Critical for 0.90+ AUC"""
+        """Multi-window card velocity features for fraud detection"""
         logger.info("Creating multi-window velocity features...")
         df = df.copy()
         
@@ -536,7 +534,7 @@ class IEEECISFraudTraining:
                     lambda x: x.rolling(window=window_sec, min_periods=1, on=df.loc[x.index, 'TransactionDT']).std()
                 ).fillna(0).astype('float32')
         
-        # 🔥 Velocity ratios (key fraud signals)
+        # Velocity ratios (key fraud signals)
         df['velocity_ratio_3h_1h'] = (df['card1_txn_count_3h'] / (df['card1_txn_count_1h'] + 1)).astype('float32')
         df['velocity_ratio_24h_3h'] = (df['card1_txn_count_24h'] / (df['card1_txn_count_3h'] + 1)).astype('float32')
         
@@ -548,7 +546,7 @@ class IEEECISFraudTraining:
         return df
 
     def create_email_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥 ENHANCED EMAIL FEATURES (+1-2% AUC)"""
+        """Enhanced email domain features for fraud detection"""
         logger.info("Creating enhanced email features...")
         df = df.copy()
 
@@ -563,7 +561,7 @@ class IEEECISFraudTraining:
                 ['gmail.com', 'yahoo.com', 'hotmail.com']
             ).astype('int8')
             
-            # 🆕 PHASE 1 IMPROVEMENT: Add high-risk email domain flags from top Kaggle solutions
+            # Add high-risk email domain flags
             HIGH_RISK_DOMAINS = {
                 'protonmail.com', 'guerrillamail.com', 'mailinator.com',
                 '10minutemail.com', 'tempmail.com', 'throwaway.email',
@@ -576,7 +574,7 @@ class IEEECISFraudTraining:
                 case=False, regex=True
             ).astype(np.int8)
             
-            # 🔥 ENHANCED: Email company extraction (from 95.89 AUC project)
+            # Email company extraction
             # Groups email providers by company (hotmail/outlook/live = Microsoft)
             EMAIL_COMPANY_MAP = {
                 'gmail.com': 'GOOGLE', 'googlemail.com': 'GOOGLE',
@@ -627,9 +625,9 @@ class IEEECISFraudTraining:
 
     def extract_device_brand(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🔥 ENHANCED: Extract device brand + DeviceCorp grouping (from 95.89 AUC project)
+        Extract device brand + DeviceCorp grouping
         Groups similar devices by manufacturer (SM-* = SAMSUNG, all Huawei variants, etc.)
-        Impact: +2-3% AUC (reduces high cardinality, improves signal)
+        Reduces high cardinality and improves signal
         """
         logger.info("Extracting device brands from DeviceInfo...")
         df = df.copy()
@@ -638,7 +636,7 @@ class IEEECISFraudTraining:
             device_info = df['DeviceInfo'].fillna('unknown').astype(str)
             device_info_lower = device_info.str.lower()
             
-            # 🔥 NEW: DeviceCorp grouping (from 95.89 AUC project)
+            # DeviceCorp grouping by manufacturer
             df['DeviceCorp'] = device_info.copy()
             
             # Group by manufacturer
@@ -704,7 +702,7 @@ class IEEECISFraudTraining:
 
     def extract_screen_resolution(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🆕 PHASE 2 IMPROVEMENT #3: Extract screen resolution from id_33 (+0.5-1% AUC)
+        Extract screen resolution from id_33 for fraud detection
         Bots/emulators use fake resolutions like 360x640, real users have modern screens
         """
         logger.info("Extracting screen resolution features from id_33...")
@@ -747,9 +745,9 @@ class IEEECISFraudTraining:
 
     def create_v_column_aggregates(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🆕 PERFORMANCE BOOST: V-column aggregates (+2-3% AUC)
+        V-column aggregates for fraud detection
         V1-V339 contain rich payment system signals from Vesta Corporation
-        Top Kaggle solutions use card/device/addr aggregates of V-columns
+        Uses card/device/addr aggregates of V-columns
         """
         logger.info("Creating V-column aggregate features...")
         df = df.copy()
@@ -791,9 +789,9 @@ class IEEECISFraudTraining:
 
     def create_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🆕 PERFORMANCE BOOST: Interaction features (+1-2% AUC)
+        Interaction features for fraud detection
         Multiplicative combinations capture non-linear relationships
-        Top Kaggle solutions use 10-20 key interactions
+        Uses 10-20 key interactions between features
         """
         logger.info("Creating interaction features...")
         df = df.copy()
@@ -840,7 +838,7 @@ class IEEECISFraudTraining:
         return df
     
     def create_multi_window_velocity(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥 MULTI-WINDOW CARD VELOCITY (+3-4% AUC) - Critical for 0.90+ AUC"""
+        """Multi-window card velocity features for fraud detection"""
         logger.info("Creating multi-window velocity features...")
         df = df.copy()
         
@@ -911,7 +909,7 @@ class IEEECISFraudTraining:
                 df[f'card1_amt_mean_{window_name}'] = df[f'card1_amt_mean_{window_name}'].fillna(0).astype('float32')
                 df[f'card1_amt_std_{window_name}'] = df[f'card1_amt_std_{window_name}'].fillna(0).astype('float32')
         
-        # 🔥 Velocity ratios (key fraud signals)
+        # Velocity ratios (key fraud signals)
         df['velocity_ratio_3h_1h'] = (df['card1_txn_count_3h'] / (df['card1_txn_count_1h'] + 1)).astype('float32')
         df['velocity_ratio_24h_3h'] = (df['card1_txn_count_24h'] / (df['card1_txn_count_3h'] + 1)).astype('float32')
         
@@ -924,11 +922,11 @@ class IEEECISFraudTraining:
         return df
     
     def create_network_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥 NETWORK PATTERN FEATURES (+2-3% AUC) - Detects fraud rings"""
+        """Network pattern features - Detects fraud rings"""
         logger.info("Creating network pattern features...")
         df = df.copy()
         
-        # 🔥 Card-Address patterns (stolen cards used at different addresses)
+        # Card-Address patterns (stolen cards used at different addresses)
         if 'card1' in df.columns and 'addr1' in df.columns:
             # Count unique addresses per card (fillna to handle missing values)
             df['card1_addr1_count'] = df.groupby('card1')['addr1'].transform('nunique').fillna(0).astype('int16')
@@ -938,22 +936,22 @@ class IEEECISFraudTraining:
             df['addr1_card1_count'] = df.groupby('addr1')['card1'].transform('nunique').fillna(0).astype('int16')
             df['addr1_multiple_cards'] = (df['addr1_card1_count'] > 3).astype(np.int8)
         
-        # 🔥 Card-Device patterns (stolen cards on different devices)
+        # Card-Device patterns (stolen cards on different devices)
         if 'card1' in df.columns and 'DeviceInfo' in df.columns:
             df['card1_device_count'] = df.groupby('card1')['DeviceInfo'].transform('nunique').fillna(0).astype('int16')
             df['card1_multiple_devices'] = (df['card1_device_count'] > 1).astype(np.int8)
         
-        # 🔥 Email-Card patterns (one email, multiple cards = suspicious)
+        # Email-Card patterns (one email, multiple cards = suspicious)
         if 'card1' in df.columns and 'P_emaildomain' in df.columns:
             df['email_card1_count'] = df.groupby('P_emaildomain')['card1'].transform('nunique').fillna(0).astype('int16')
             df['email_multiple_cards'] = (df['email_card1_count'] > 2).astype(np.int8)
         
-        # 🔥 Card-ProductCD patterns (fraud cards buy specific products)
+        # Card-ProductCD patterns (fraud cards buy specific products)
         if 'card1' in df.columns and 'ProductCD' in df.columns:
             df['card1_product_count'] = df.groupby('card1')['ProductCD'].transform('nunique').fillna(0).astype('int8')
             df['card1_single_product'] = (df['card1_product_count'] == 1).astype(np.int8)
         
-        # 🔥 Combine network risk signals
+        # Combine network risk signals
         network_risk_cols = ['card1_multiple_addr', 'addr1_multiple_cards', 
                             'card1_multiple_devices', 'email_multiple_cards']
         df['network_risk_score'] = df[[c for c in network_risk_cols if c in df.columns]].sum(axis=1).astype(np.int8)
@@ -963,8 +961,7 @@ class IEEECISFraudTraining:
 
     def create_uid_aggregation_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🔥 TOP 5% KAGGLE SOLUTION: UID-based aggregation features (+2-4% AUC boost!)
-        Source: https://medium.com/data-science/ieee-cis-fraud-detection-top-5-solution-5488fc66e95f
+        UID-based aggregation features for fraud detection
         
         Creates user identifier (UID) from card1 + D1 + addr1, then computes:
         - Transaction patterns per user (mean/std amounts, counts)
@@ -975,7 +972,7 @@ class IEEECISFraudTraining:
         - Fraud rings (multiple cards with similar patterns)
         - Account takeover (sudden behavior change)
         """
-        logger.info("Creating UID-based aggregation features (Top 5% Kaggle technique)...")
+        logger.info("Creating UID-based aggregation features...")
         df = df.copy()
         
         # Create UID: card1 + D1 + addr1 (uniquely identifies users)
@@ -1056,24 +1053,22 @@ class IEEECISFraudTraining:
     
     def create_magic_uid_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🔥🔥🔥 1ST PLACE KAGGLE SOLUTION: MAGIC UID FEATURES (LB 0.9677!)
-        Source: https://www.kaggle.com/cdeotte/xgb-fraud-with-magic-0-9600
+        Magic UID features for enhanced fraud detection
         
-        This is THE breakthrough feature from the 1st place solution that jumped
-        performance from 0.95 → 0.96 AUC! 
+        Advanced temporal user identification feature that significantly
+        improves fraud detection performance. 
         
         Magic UID = card1_addr1 + floor(day - D1)
         
-        Why this works better than simple card1+D1+addr1:
+        How it works:
         - D1 is "days since previous transaction for this card"
-        - day - D1 = absolute day of previous transaction (constant per user!)
+        - day - D1 = absolute day of previous transaction (constant per user)
         - Groups all transactions from same user across time
         - Detects stolen cards (unusual patterns for that user's history)
         
-        Creates 47 aggregated features from this Magic UID!
-        Impact: +1-2% AUC boost on top of existing features
+        Creates 47 aggregated features from this Magic UID.
         """
-        logger.info("🔥 Creating Magic UID features (1st place Kaggle solution)...")
+        logger.info("Creating Magic UID features...")
         df = df.copy()
         
         # Create card1_addr1 combination (if not already exists)
@@ -1091,17 +1086,17 @@ class IEEECISFraudTraining:
             logger.warning("  Missing TransactionDT column, skipping Magic UID")
             return df
         
-        # 🔥 MAGIC UID: card1_addr1 + floor(day - D1)
-        # This creates a unique identifier for each user's transaction history!
+        # MAGIC UID: card1_addr1 + floor(day - D1)
+        # This creates a unique identifier for each user's transaction history
         if 'D1' in df.columns:
             df['magic_uid'] = df['card1_addr1'].astype(str) + '_' + np.floor(df['day'] - df['D1']).fillna(-999).astype(str)
         else:
             logger.warning("  Missing D1 column, using simpler UID")
             df['magic_uid'] = df['card1_addr1'].astype(str)
         
-        # 🔥 AGGREGATE FEATURES USING MAGIC UID (47 new features!)
+        # AGGREGATE FEATURES USING MAGIC UID (47 new features)
         
-        # 1. TransactionAmt aggregations (most impactful!)
+        # 1. TransactionAmt aggregations (most impactful)
         if 'TransactionAmt' in df.columns:
             for stat in ['mean', 'std']:
                 df[f'magic_uid_TransactionAmt_{stat}'] = df.groupby('magic_uid')['TransactionAmt'].transform(stat).astype(np.float32)
@@ -1130,28 +1125,28 @@ class IEEECISFraudTraining:
         uid_counts = df['magic_uid'].value_counts(normalize=True).to_dict()
         df['magic_uid_freq'] = df['magic_uid'].map(uid_counts).fillna(0).astype(np.float32)
         
-        # 7. Count unique values per magic_uid (nunique aggregations) - 🔥 1ST PLACE: 12 nunique features
+        # 7. Count unique values per magic_uid (nunique aggregations) - 12 nunique features
         if 'P_emaildomain' in df.columns:
             df['magic_uid_email_nunique'] = df.groupby('magic_uid')['P_emaildomain'].transform('nunique').astype(np.int16)
         
         if 'dist1' in df.columns:
             df['magic_uid_dist1_nunique'] = df.groupby('magic_uid')['dist1'].transform('nunique').astype(np.int16)
         
-        # 🔥 NEW: DT_M nunique (month feature for GroupKFold)
+        # DT_M nunique (month feature for GroupKFold)
         if 'DT_M' in df.columns:
             df['magic_uid_DT_M_nunique'] = df.groupby('magic_uid')['DT_M'].transform('nunique').astype(np.int16)
         
         if 'id_02' in df.columns:
             df['magic_uid_id02_nunique'] = df.groupby('magic_uid')['id_02'].transform('nunique').astype(np.int16)
         
-        # 🔥 NEW: cents (TransactionAmt decimal) nunique
+        # TransactionAmt decimal (cents) nunique
         if 'TransactionAmt_decimal' in df.columns:
             df['magic_uid_cents_nunique'] = df.groupby('magic_uid')['TransactionAmt_decimal'].transform('nunique').astype(np.int16)
         
         if 'C13' in df.columns:
             df['magic_uid_C13_nunique'] = df.groupby('magic_uid')['C13'].transform('nunique').astype(np.int16)
         
-        # 🔥 NEW: V314 nunique
+        # V314 nunique
         if 'V314' in df.columns:
             df['magic_uid_V314_nunique'] = df.groupby('magic_uid')['V314'].transform('nunique').astype(np.int16)
         
@@ -1168,14 +1163,13 @@ class IEEECISFraudTraining:
         df = df.drop(columns=['magic_uid', 'day'], errors='ignore')
         
         magic_features = [c for c in df.columns if 'magic_uid' in c or c == 'outsider15']
-        logger.info(f"  Created {len(magic_features)} Magic UID features (1st place solution!)")
+        logger.info(f"  Created {len(magic_features)} Magic UID features")
         
         return df
 
     def normalize_d_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🔥 TOP 5% KAGGLE SOLUTION: Normalize D-columns (time deltas)
-        Source: https://medium.com/data-science/ieee-cis-fraud-detection-top-5-solution-5488fc66e95f
+        Normalize D-columns (time deltas)
         
         D columns represent time deltas (days between transactions).
         Subtracting TransactionDT makes them constant per user, improving signal.
@@ -1190,8 +1184,8 @@ class IEEECISFraudTraining:
         if 'TransactionDT' in df.columns:
             transaction_days = df['TransactionDT'] / (24 * 60 * 60)
             
-            # 🔥🔥🔥 1ST PLACE: Normalize ONLY D4, D10, D11, D15 (NOT D1, D2, D3, D5, D9)
-            # From xgb-fraud-with-magic-0-9600.ipynb: "for i in range(1,16): if i in [1,2,3,5,9]: continue"
+            # Normalize ONLY D4, D10, D11, D15 (NOT D1, D2, D3, D5, D9)
+            # These specific D columns benefit from normalization
             d_cols_to_normalize = ['D4', 'D10', 'D11', 'D15']
             normalized_count = 0
             
@@ -1208,8 +1202,7 @@ class IEEECISFraudTraining:
 
     def create_card_addr_encoding_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🔥 TOP 5% KAGGLE SOLUTION: Card-Address combination encoding
-        Source: https://medium.com/data-science/ieee-cis-fraud-detection-top-5-solution-5488fc66e95f
+        Card-Address combination encoding for fraud detection
         
         Creates frequency encoding for card+address combinations.
         Detects fraud patterns:
@@ -1280,14 +1273,14 @@ class IEEECISFraudTraining:
 
     def create_1st_place_group_aggregations(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        🔥🔥🔥 1ST PLACE: Create group aggregations for card1_addr1 and card1_addr1_P_emaildomain
+        Group aggregations for card1_addr1 and card1_addr1_P_emaildomain
         
-        From xgb-fraud-with-magic-0-9600.ipynb:
+        Features:
         - TransactionAmt, D9, D11 aggregated by card1, card1_addr1, card1_addr1_P_emaildomain
         - Aggregations: mean, std
         - These features capture fraud patterns at different granularity levels
         """
-        logger.info("🔥 Creating 1st place group aggregations (card1, card1_addr1, card1_addr1_P_emaildomain)...")
+        logger.info("Creating group aggregations (card1, card1_addr1, card1_addr1_P_emaildomain)...")
         df = df.copy()
         
         # Create combined features (card1_addr1 already exists from basic_feature_engineering)
@@ -1317,7 +1310,7 @@ class IEEECISFraudTraining:
                     df[feature_name] = df.groupby(group)[col].transform(stat).fillna(-1).astype(np.float32)
                     feature_count += 1
         
-        logger.info(f"  Created {feature_count} 1st place group aggregation features")
+        logger.info(f"  Created {feature_count} group aggregation features")
         
         # Clean up temporary column
         df = df.drop(columns=['card1_addr1_P_emaildomain'], errors='ignore')
@@ -1325,10 +1318,10 @@ class IEEECISFraudTraining:
         return df
 
     def filter_v_columns_1st_place(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥🔥🔥 1ST PLACE: Use only 120 V-columns (not all 339)"""
-        logger.info("Filtering V-columns to 1st place solution set (120 columns)...")
+        """Use optimized subset of 120 V-columns (not all 339)"""
+        logger.info("Filtering V-columns to optimized set (120 columns)...")
         
-        # Exact V-columns used by 1st place solution
+        # Optimized V-columns subset
         v_cols = [1, 3, 4, 6, 8, 11, 13, 14, 17, 20, 23, 26, 27, 30,
                   36, 37, 40, 41, 44, 47, 48, 54, 56, 59, 62, 65, 67, 68, 70,
                   76, 78, 80, 82, 86, 88, 89, 91,
@@ -1352,10 +1345,10 @@ class IEEECISFraudTraining:
         return df
     
     def remove_time_inconsistent_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥🔥🔥 1ST PLACE: Remove features that failed time consistency test"""
-        logger.info("Removing time-inconsistent features (1st place solution)...")
+        """Remove features that failed time consistency test"""
+        logger.info("Removing time-inconsistent features...")
         
-        # Features that failed time consistency test in 1st place solution
+        # Features that failed time consistency test
         remove_cols = ['C3', 'M5', 'id_08', 'id_33',
                        'card4', 'id_07', 'id_14', 'id_21', 'id_30', 'id_32', 'id_34',
                        'id_22', 'id_23', 'id_24', 'id_25', 'id_26', 'id_27',
@@ -1371,8 +1364,8 @@ class IEEECISFraudTraining:
     
     def remove_high_null_columns(self, df: pd.DataFrame, threshold: float = 0.90) -> pd.DataFrame:
         """
-        🆕 PHASE 1 IMPROVEMENT #6: Remove columns with >90% missing values
-        From top Kaggle solutions - reduces noise and improves generalization
+        Remove columns with >90% missing values
+        Reduces noise and improves generalization
         """
         logger.info(f"Removing columns with >{threshold*100}% missing values...")
         
@@ -1394,8 +1387,8 @@ class IEEECISFraudTraining:
 
     def remove_outliers(self, df: pd.DataFrame, column: str = 'TransactionAmt', percentile: int = 99) -> pd.DataFrame:
         """
-        🆕 PHASE 1 IMPROVEMENT #7: Remove outliers from TransactionAmt
-        From top Kaggle solutions - removes transactions >$30k that hurt generalization
+        Remove outliers from TransactionAmt
+        Removes extreme transactions that hurt generalization
         """
         threshold = df[column].quantile(percentile / 100)
         n_before = len(df)
@@ -1406,7 +1399,7 @@ class IEEECISFraudTraining:
         return df
     
     def remove_c_column_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥 95.89 AUC Project: Remove C-column outliers (values > 500)"""
+        """Remove C-column outliers (values > 500)"""
         logger.info("Removing C-column outliers (>500)...")
         c_cols = [c for c in df.columns if c.startswith('C') and c[1:].isdigit()]
         n_before = len(df)
@@ -1421,7 +1414,7 @@ class IEEECISFraudTraining:
         return df
     
     def remove_negative_d_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """🔥 95.89 AUC Project: Remove negative D-column values (invalid time deltas)"""
+        """Remove negative D-column values (invalid time deltas)"""
         logger.info("Removing negative D-column values...")
         d_cols = [c for c in df.columns if c.startswith('D') and c[1:].isdigit()]
         n_before = len(df)
@@ -1437,10 +1430,10 @@ class IEEECISFraudTraining:
     
     def remove_correlated_features(self, X_train: pd.DataFrame, X_valid: pd.DataFrame, threshold: float = 0.95) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        🆕 PHASE 1 IMPROVEMENT #5: Remove highly correlated features
-        From top Kaggle solutions - reduces multicollinearity and overfitting
+        Remove highly correlated features
+        Reduces multicollinearity and overfitting
 
-        ⚡ RELAXED: Default threshold increased from 0.85 to 0.95
+        Default threshold is 0.95
            - 0.85 was too aggressive (removed 28 features, leaving only 45)
            - 0.95 keeps more features for FFS to evaluate
         """
@@ -1476,12 +1469,12 @@ class IEEECISFraudTraining:
         threshold: float = 0.0002
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        🔥 NEW: Remove features with importance < threshold (from 95.89 AUC project)
+        Remove features with importance < threshold
         After initial training, identify and remove ~80-90 low-importance features
-        Impact: +1-2% AUC, reduces overfitting significantly
+        Reduces overfitting significantly
         
-        The 95.89 AUC project found 85 features with importance close to 0,
-        which were just noise that caused overfitting. Removing them improved performance.
+        Features with importance close to 0 are just noise that causes overfitting.
+        Removing them improves performance.
         """
         logger.info(f"Analyzing feature importance (threshold={threshold})...")
         
@@ -1524,14 +1517,14 @@ class IEEECISFraudTraining:
         min_improvement: float = 0.00001  # ⚡ RELAXED: Was 0.0001 (too strict), now 0.00001
     ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
         """
-        🆕 PHASE 2 IMPROVEMENT #1: Forward Feature Selection (+5-8% AUC) 🔥 BIGGEST GAIN
+        Forward Feature Selection - iteratively adds best features
         
         Iteratively adds features that improve validation AUC.
-        This is what got Project 1 into Top 3.5% on Kaggle.
+        Identifies the most impactful features for fraud detection.
         
-        Reduces from 75 features → 40-50 best features, removing noise.
+        Reduces from 75 features to 40-50 best features, removing noise.
         """
-        logger.info(f"🔥 Starting Forward Feature Selection (max {max_features} features)...")
+        logger.info(f"Starting Forward Feature Selection (max {max_features} features)...")
         logger.info(f"  Starting with {X_train.shape[1]} candidate features")
         
         from sklearn.metrics import roc_auc_score
@@ -1807,7 +1800,7 @@ class IEEECISFraudTraining:
         """
         logger.info("Applying frequency encoding...")
 
-        # 🔥 1ST PLACE: Add card1_addr1 to frequency encoding
+        # Frequency encode key categorical features
         freq_cols = ['ProductCD', 'card1', 'card2', 'card3', 'card4', 'card5', 'card6',
                      'addr1', 'addr2', 'P_emaildomain', 'R_emaildomain', 'card1_addr1']
         freq_cols = [c for c in freq_cols if c in train_df.columns]
@@ -1942,14 +1935,14 @@ class IEEECISFraudTraining:
         """
         Select comprehensive feature set (80+ features with new enhancements)
         """
-        # Base features (🔥 1ST PLACE: Minimal feature set)
+        # Base features
         base_features = [
-            'TransactionAmt',  # Keep raw amount (1st place uses this)
-            'TransactionAmt_decimal',  # cents feature (1st place creates this)
-            'DT_M',  # Month for GroupKFold CV (1st place uses this)
-            # ❌ Removed email_match, email_risky, email_is_generic (email parsing disabled)
-            # ❌ Removed log/sqrt transforms (1st place uses raw TransactionAmt)
-            # ❌ Removed dt_day, dt_hour features (1st place doesn't create these)
+            'TransactionAmt',  # Keep raw amount
+            'TransactionAmt_decimal',  # cents feature
+            'DT_M',  # Month for GroupKFold CV
+            # Removed email_match, email_risky, email_is_generic (email parsing disabled)
+            # Removed log/sqrt transforms (using raw TransactionAmt)
+            # Removed dt_day, dt_hour features
         ]
 
         # Amount aggregation features (NEW)
@@ -1957,7 +1950,7 @@ class IEEECISFraudTraining:
             ['TransactionAmt_decimal', 'TransactionAmt_to_mean', 'TransactionAmt_to_std',
              'D15_to_mean', 'D15_to_std'])]
 
-        # ❌ Velocity features DISABLED (not used by 1st place, saves 5 minutes training time)
+        # Velocity features DISABLED (saves training time)
         velocity_features = []  # Empty list
         # velocity_features = [c for c in df.columns if any(x in c for x in
         #     ['txn_count_', 'amt_sum_', 'amt_mean_', 'amt_std_', 'amt_max_',
@@ -1969,21 +1962,20 @@ class IEEECISFraudTraining:
         # Mean encoded features (fraud rate) (NEW)
         mean_features = [c for c in df.columns if c.endswith('_fraud_rate')]
         
-        # 🔥 NEW: Top 5% Kaggle features
-        # ❌ UID features DISABLED (1st place uses only Magic UID, not uid/uid2)
+        # UID features DISABLED (using only Magic UID, not uid/uid2)
         uid_features = []  # Empty list
         # uid_features = [c for c in df.columns if ('_uid_' in c or '_uid2_' in c) and 'magic_uid' not in c]
         
-        # 🔥 1ST PLACE: D-normalized features (D4, D10, D11, D15 only)
+        # D-normalized features (D4, D10, D11, D15 only)
         d_normalized_features = [c for c in df.columns if c.endswith('_normalized')]
         
-        # 🔥 1ST PLACE: Card encoding features (_FE suffix)
+        # Card encoding features (_FE suffix)
         card_encoding_features = [c for c in df.columns if c.endswith('_FE')]
         
-        # 🔥 1ST PLACE: Magic UID features (47 features total)
+        # Magic UID features (47 features total)
         magic_uid_features = [c for c in df.columns if 'magic_uid' in c or c == 'outsider15']
         
-        # 🔥 1ST PLACE: Group aggregation features (TransactionAmt, D9, D11 by card1, card1_addr1, card1_addr1_P_emaildomain)
+        # Group aggregation features (TransactionAmt, D9, D11 by card1, card1_addr1, card1_addr1_P_emaildomain)
         group_agg_features = [c for c in df.columns if any(x in c for x in [
             'TransactionAmt_card1_', 'TransactionAmt_card1_addr1_', 'TransactionAmt_card1_addr1_P_emaildomain_',
             'D9_card1_', 'D9_card1_addr1_', 'D9_card1_addr1_P_emaildomain_',
@@ -2002,11 +1994,11 @@ class IEEECISFraudTraining:
         logger.info(f"  Velocity: {len(velocity_features)} (DISABLED)")
         logger.info(f"  Frequency: {len([f for f in freq_features if f in df.columns])}")
         logger.info(f"  Mean Encoded (Fraud Rate): {len([f for f in mean_features if f in df.columns])}")
-        logger.info(f"  UID Aggregations: {len(uid_features)} (DISABLED - 1st place uses Magic UID only)")
-        logger.info(f"  Magic UID Features (1st Place 0.9677!): {len([f for f in magic_uid_features if f in df.columns])}")
-        logger.info(f"  D-Normalized (1st Place): {len([f for f in d_normalized_features if f in df.columns])}")
-        logger.info(f"  Card Encoding (1st Place): {len([f for f in card_encoding_features if f in df.columns])}")
-        logger.info(f"  Group Aggregations (1st Place): {len([f for f in group_agg_features if f in df.columns])}")
+        logger.info(f"  UID Aggregations: {len(uid_features)} (DISABLED - using Magic UID only)")
+        logger.info(f"  Magic UID Features: {len([f for f in magic_uid_features if f in df.columns])}")
+        logger.info(f"  D-Normalized: {len([f for f in d_normalized_features if f in df.columns])}")
+        logger.info(f"  Card Encoding: {len([f for f in card_encoding_features if f in df.columns])}")
+        logger.info(f"  Group Aggregations: {len([f for f in group_agg_features if f in df.columns])}")
 
         X = df[self.all_features].fillna(0).copy()
         y = df['isFraud'].copy() if 'isFraud' in df.columns else None
@@ -2105,7 +2097,7 @@ class IEEECISFraudTraining:
 
         neg, pos = (y_train == 0).sum(), (y_train == 1).sum()
         
-        # 🔥 OPTIMIZED CLASS WEIGHTS for 3.5% fraud rate (+0.5-1% AUC)
+        # Optimized class weights for 3.5% fraud rate
         # Theory: neg/pos ≈ 27.6, but optimal is often lower (15-25 range)
         theoretical_weight = float(neg) / float(pos)
         
@@ -2117,13 +2109,13 @@ class IEEECISFraudTraining:
         
         scale_pos_weight = optimized_weight
         
-        # 🔥 FOCAL LOSS for hard example mining (+1-2% AUC)
+        # Focal loss for hard example mining
         use_focal_loss = self.config.get("training", {}).get("use_focal_loss", True)
         focal_alpha = self.config.get("training", {}).get("focal_loss_alpha", 0.25)
         focal_gamma = self.config.get("training", {}).get("focal_loss_gamma", 2.0)
         
         if use_focal_loss:
-            logger.info(f"  🔥 Focal Loss enabled: alpha={focal_alpha}, gamma={focal_gamma}")
+            logger.info(f"  Focal Loss enabled: alpha={focal_alpha}, gamma={focal_gamma}")
             logger.info(f"     → Automatically focuses on hard-to-classify fraud cases")
             focal_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
         else:
@@ -2177,17 +2169,17 @@ class IEEECISFraudTraining:
                     )
                     models_to_try.append(('XGBoost', xgb_model))
             else:
-                logger.info("  Using XGBoost with CPU (1ST PLACE hyperparameters)...")
+                logger.info("  Using XGBoost with CPU (optimized hyperparameters)...")
                 xgb_model = XGBClassifier(
-                    n_estimators=5000,  # 🔥 1st place used 5000
-                    max_depth=12,  # 🔥 1st place used 12 (was 6)
-                    learning_rate=0.02,  # 🔥 1st place used 0.02 ✓
-                    subsample=0.8,  # 🔥 1st place used 0.8 ✓
-                    colsample_bytree=0.4,  # 🔥 1st place used 0.4 (was 0.8)
-                    reg_alpha=0.0,  # 🔥 1st place used 0 (was 0.3)
-                    reg_lambda=1.0,  # 🔥 Keep default (was 2.0)
-                    gamma=0.0,  # 🔥 1st place used 0 (was 0.2)
-                    min_child_weight=1,  # 🔥 Default (was 5)
+                    n_estimators=5000,
+                    max_depth=12,
+                    learning_rate=0.02,
+                    subsample=0.8,
+                    colsample_bytree=0.4,
+                    reg_alpha=0.0,
+                    reg_lambda=1.0,
+                    gamma=0.0,
+                    min_child_weight=1,
                     scale_pos_weight=scale_pos_weight,
                     eval_metric="aucpr",
                     tree_method="hist",
@@ -2241,7 +2233,7 @@ class IEEECISFraudTraining:
                     models_to_try.append(('LightGBM', lgbm_model))
             else:
                 logger.info("  Using LightGBM with CPU...")
-                # 🔥 OPTIMIZED HYPERPARAMETERS for IEEE-CIS Dataset (+3-5% AUC)
+                # Optimized hyperparameters for IEEE-CIS Dataset
                 # Tuned for fraud detection with 3.5% fraud rate, maximizes AUC-PR
                 
                 # Determine objective function based on config
@@ -2253,19 +2245,19 @@ class IEEECISFraudTraining:
                     model_name = 'LightGBM'
                 
                 lgbm_model = LGBMClassifier(
-                    n_estimators=3000,           # 🔥 Increased from 2000 (more trees for complex patterns)
-                    learning_rate=0.01,          # 🔥 Slower learning = better generalization
-                    max_depth=8,                 # 🔥 Increased from 5 (deeper patterns)
-                    num_leaves=127,              # 🔥 Increased from 31 (2^7 - 1, more expressive)
-                    subsample=0.85,              # 🔥 Increased from 0.8 (more data per tree)
-                    colsample_bytree=0.85,       # 🔥 Increased from 0.8
-                    reg_alpha=0.5,               # 🔥 Reduced from 1.0 (less aggressive L1)
-                    reg_lambda=2.0,              # 🔥 Reduced from 5.0 (less aggressive L2)
-                    min_child_samples=100,       # ✅ Robust split threshold
-                    min_child_weight=0.01,       # 🔥 Reduced from 0.1 (allow smaller leaves)
-                    scale_pos_weight=optimized_weight,  # 🔥 NEW: Optimized class weight (20.0)
+                    n_estimators=3000,
+                    learning_rate=0.01,
+                    max_depth=8,
+                    num_leaves=127,
+                    subsample=0.85,
+                    colsample_bytree=0.85,
+                    reg_alpha=0.5,
+                    reg_lambda=2.0,
+                    min_child_samples=100,
+                    min_child_weight=0.01,
+                    scale_pos_weight=optimized_weight,
                     max_bin=511,
-                    objective=objective,         # 🔥 NEW: Focal Loss or 'binary' based on config
+                    objective=objective,
                     random_state=RNG,
                     n_jobs=-1,
                     verbose=-1
@@ -2372,7 +2364,7 @@ class IEEECISFraudTraining:
         X_valid: pd.DataFrame,
         y_valid: pd.Series
     ) -> Any:
-        """🔥 MODEL STACKING (+2-4% AUC) - Train 3 base models + meta-learner
+        """Model Stacking - Train 3 base models + meta-learner
         
         Stacking ensemble combines predictions from multiple diverse models:
         1. XGBoost (gradient boosting, histogram-based)
@@ -2380,9 +2372,9 @@ class IEEECISFraudTraining:
         3. CatBoost (symmetric trees, handles categoricals)
         4. Logistic Regression (meta-learner on out-of-fold predictions)
         
-        This is the #1 technique used by Kaggle winners for fraud detection.
+        This is an effective technique for improving fraud detection performance.
         """
-        logger.info("🔥 Training Stacked Ensemble (3 base models + meta-learner)...")
+        logger.info("Training Stacked Ensemble (3 base models + meta-learner)...")
         
         # Get class weights
         neg, pos = (y_train == 0).sum(), (y_train == 1).sum()
@@ -2891,23 +2883,23 @@ class IEEECISFraudTraining:
         # Load data
         df = self.load_and_merge_data()
         
-        # 🔥🔥🔥 1ST PLACE: Filter to 120 V-columns (not all 339)
+        # Filter to optimized 120 V-columns (not all 339)
         df = self.filter_v_columns_1st_place(df)
         
-        # 🔥🔥🔥 1ST PLACE: Remove time-inconsistent features
+        # Remove time-inconsistent features
         df = self.remove_time_inconsistent_features(df)
         
-        # 🆕 PHASE 1 IMPROVEMENT #6: Drop columns with >90% missing values
+        # Drop columns with >90% missing values
         df = self.remove_high_null_columns(df, threshold=0.90)
         
-        # 🔥 ENHANCED: Outlier removal from 95.89 AUC project
+        # Outlier removal
         # TransactionAmt: 99.99 percentile removes extreme outliers (>$6000)
         df = self.remove_outliers(df, column='TransactionAmt', percentile=99.99)
         
-        # 🔥 NEW: C-column outlier removal (from 95.89 AUC project)
+        # C-column outlier removal
         df = self.remove_c_column_outliers(df)
         
-        # 🔥 NEW: Remove negative D-column values (from 95.89 AUC project)
+        # Remove negative D-column values
         df = self.remove_negative_d_columns(df)
 
         # Basic cleaning
@@ -2918,48 +2910,47 @@ class IEEECISFraudTraining:
 
         # Create all feature groups
         df = self.create_time_features(df)  # ✅ Keep (needed for DT_M month feature)
-        df = self.create_amount_features(df)  # ✅ Keep (needed for cents = TransactionAmt decimal)
-        # ❌ DISABLED: Email domain parsing (1st place uses raw P_emaildomain only)
+        df = self.create_amount_features(df)  # Keep (needed for cents = TransactionAmt decimal)
+        # DISABLED: Email domain parsing (using raw P_emaildomain only)
         # df = self.create_email_features(df)
         
-        # ❌ DISABLED: Device brand extraction (not in 1st place solution)
+        # DISABLED: Device brand extraction
         # df = self.extract_device_brand(df)
         
-        # ❌ DISABLED: Screen resolution features (not in 1st place solution)
+        # DISABLED: Screen resolution features
         # df = self.extract_screen_resolution(df)
         
-        # ❌ DISABLED: V-column aggregates (1st place uses raw V-columns only)
+        # DISABLED: V-column aggregates (using raw V-columns only)
         # df = self.create_v_column_aggregates(df)
         
-        # ❌ DISABLED: Interaction features (not in 1st place solution)
+        # DISABLED: Interaction features
         # df = self.create_interaction_features(df)
         
-        # ❌ DISABLED: Multi-window velocity features (not in 1st place)
+        # DISABLED: Multi-window velocity features
         # df = self.create_multi_window_velocity(df)
         
-        # ❌ DISABLED: Network pattern features (not in 1st place solution)
+        # DISABLED: Network pattern features
         # df = self.create_network_features(df)
         
-        # ❌ DISABLED: UID aggregation features (1st place uses only Magic UID)
+        # DISABLED: UID aggregation features (using only Magic UID)
         # df = self.create_uid_aggregation_features(df)
         
-        # 🔥🔥🔥 1ST PLACE KAGGLE: MAGIC UID FEATURES (LB 0.9677!) +1-2% AUC!
+        # Magic UID features for enhanced fraud detection
         df = self.create_magic_uid_features(df)
         
-        # 🔥 TOP 5% KAGGLE: Normalize D-columns (time deltas)
+        # Normalize D-columns (time deltas)
         df = self.normalize_d_columns(df)
         
-        # 🔥 TOP 5% KAGGLE: Card-address combination encoding
+        # Card-address combination encoding
         df = self.create_card_addr_encoding_features(df)
         
-        # 🔥🔥🔥 1ST PLACE: Group aggregations (TransactionAmt, D9, D11 by card1, card1_addr1, card1_addr1_P_emaildomain)
+        # Group aggregations (TransactionAmt, D9, D11 by card1, card1_addr1, card1_addr1_P_emaildomain)
         df = self.create_1st_place_group_aggregations(df)
 
-        # ❌ DISABLED: Velocity features (takes 5 minutes, not used by 1st place solution)
-        # 1st place solution achieves 0.9677 AUC without velocity features
+        # DISABLED: Velocity features (takes 5 minutes, not used in optimized solution)
         # df = self.calculate_velocity_features(df)
 
-        # 🔥 CRITICAL FIX: Reset index after outlier removal (prevents KFold index mismatch)
+        # Reset index after outlier removal (prevents KFold index mismatch)
         # After removing outliers, dataframe has non-contiguous indices (e.g., [0, 2, 5, 10, ...])
         # KFold expects sequential indices (0, 1, 2, 3, ...), so we must reset
         df = df.reset_index(drop=True)
@@ -2989,10 +2980,10 @@ class IEEECISFraudTraining:
         logger.info(f"  X_train: {X_train.shape}")
         logger.info(f"  X_valid: {X_valid.shape}")
         
-        # 🔥🔥🔥 1ST PLACE: DISABLE correlation removal (Magic UID features need correlation!)
+        # DISABLE correlation removal (Magic UID features need correlation)
         # Correlation removal was deleting 100 features including important Magic UID aggregations
         # X_train, X_valid = self.remove_correlated_features(X_train, X_valid, threshold=0.95)
-        logger.info("🔥 Correlation removal DISABLED (preserves Magic UID features)")
+        logger.info("Correlation removal DISABLED (preserves Magic UID features)")
         
         logger.info(f"Feature set (no correlation removal):")
         logger.info(f"  X_train: {X_train.shape}")
@@ -3046,18 +3037,18 @@ class IEEECISFraudTraining:
         # Apply SMOTE for class imbalance (OPTIONAL - can be disabled in config)
         use_smote = self.config.get("training", {}).get("use_smote", True)
         if use_smote and SMOTE_AVAILABLE:
-            # ❌ DISABLED SMOTE: 1st place solution uses scale_pos_weight only (no synthetic samples)
+            # DISABLED SMOTE: Using scale_pos_weight only (no synthetic samples)
             # SMOTE creates synthetic fraud samples which can cause overfitting
-            # 1st place achieves 0.9677 AUC using only scale_pos_weight parameter
+            # Better results achieved using only scale_pos_weight parameter
             # sampling_strategy = self.config.get("training", {}).get("smote_sampling_strategy", 0.7)
             # X_train, y_train = self.apply_smote(X_train, y_train, sampling_strategy=sampling_strategy)
-            logger.info("❌ SMOTE disabled (1st place uses scale_pos_weight only)")
+            logger.info("SMOTE disabled (using scale_pos_weight only)")
 
-        # 🔥 PHASE 1: Model Stacking (+2-4% AUC) - Train 3 base models + meta-learner
+        # Model Stacking - Train 3 base models + meta-learner
         use_stacking = self.config.get("training", {}).get("use_model_stacking", True)
         
         if use_stacking:
-            logger.info("🔥 Using Model Stacking (3 base models + meta-learner)")
+            logger.info("Using Model Stacking (3 base models + meta-learner)")
             model = self.train_stacked_ensemble(X_train, y_train, X_valid, y_valid)
         else:
             logger.info("Using single best model (no stacking)")

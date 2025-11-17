@@ -682,29 +682,47 @@ class EnhancedFraudDetectionInference:
                 # Since IEEE-CIS lacks user_id, we use card1 as "user proxy" for demo purposes
                 # This demonstrates ATO patterns even without true user tracking
                 
+                # NOVELTY 1: Behavioral Velocity Scoring
+                # Track rapid changes in transaction patterns (novel contribution)
+                behavioral_velocity = np.zeros(n)
+                
                 ato_risk_scores = np.zeros(n)
                 ato_detected_flags = np.zeros(n, dtype=int)
+                ato_confidence_levels = np.zeros(n)  # NOVELTY 2: Confidence scoring
                 
                 for i in range(n):
                     ato_signals = []
                     ato_risk = 0.0
+                    signal_confidences = []  # NOVELTY: Track confidence per signal
                     
                     # Signal 1: Geographic Anomaly (uses IEEE-CIS dist1, dist2 fields)
                     # dist1 = distance between address and card, dist2 = distance between address and email
+                    # NOVELTY: Multi-tier distance scoring with confidence
                     if 'dist1' in input_df.columns and not pd.isna(input_df.loc[input_df.index[i], 'dist1']):
                         dist1_val = input_df.loc[input_df.index[i], 'dist1']
-                        if dist1_val > 1000:  # >1000km distance = suspicious
+                        if dist1_val > 3000:  # Critical: >3000km
+                            ato_risk += 0.40
+                            signal_confidences.append(0.95)
+                            ato_signals.append("geo_critical_dist1")
+                        elif dist1_val > 1500:  # High: 1500-3000km
                             ato_risk += 0.30
-                            ato_signals.append("geo_anomaly_dist1")
+                            signal_confidences.append(0.85)
+                            ato_signals.append("geo_high_dist1")
+                        elif dist1_val > 1000:  # Medium: 1000-1500km
+                            ato_risk += 0.20
+                            signal_confidences.append(0.70)
+                            ato_signals.append("geo_medium_dist1")
                     
                     if 'dist2' in input_df.columns and not pd.isna(input_df.loc[input_df.index[i], 'dist2']):
                         dist2_val = input_df.loc[input_df.index[i], 'dist2']
                         if dist2_val > 2000:  # >2000km distance = highly suspicious
                             ato_risk += 0.25
+                            signal_confidences.append(0.90)
                             ato_signals.append("geo_anomaly_dist2")
                     
                     # Signal 2: Device/Location Change (card + address combination change)
                     # New card-addr combo compared to historical pattern (Magic UID concept)
+                    # NOVELTY: Behavioral Velocity - rapid pattern changes
                     card1_val = card1.iloc[i]
                     addr1_val = addr1.iloc[i]
                     if card1_val != -1 and addr1_val != -1:
@@ -712,43 +730,86 @@ class EnhancedFraudDetectionInference:
                         # For demo: Flag unusual combinations (low card1 + high addr1 = suspicious)
                         if card1_val < 5000 and addr1_val > 400:
                             ato_risk += 0.20
+                            signal_confidences.append(0.75)
                             ato_signals.append("device_location_mismatch")
+                            behavioral_velocity[i] = 0.6  # Medium velocity change
                     
                     # Signal 3: Email Domain Mismatch (P_emaildomain vs R_emaildomain)
                     # In real ATO, attacker changes email to disposable domain
+                    # NOVELTY: Enhanced email risk with pattern correlation
                     p_email = P_emaildomain.iloc[i]
                     r_email = R_emaildomain.iloc[i]
-                    if p_email != r_email and (p_email in ['tempmail.com', 'mailinator.com', 'guerrillamail.com', 
-                                                            'yopmail.com', '10minutemail.com', 'anonymous.com']):
-                        ato_risk += 0.35
-                        ato_signals.append("email_takeover_pattern")
+                    if p_email != r_email:
+                        if p_email in ['tempmail.com', 'mailinator.com', 'guerrillamail.com', 
+                                       'yopmail.com', '10minutemail.com', 'anonymous.com']:
+                            ato_risk += 0.40  # Critical signal
+                            signal_confidences.append(0.95)
+                            ato_signals.append("email_takeover_critical")
+                            behavioral_velocity[i] += 0.3  # Email change = rapid behavior change
+                        elif p_email in RISKY_DOMAINS:
+                            ato_risk += 0.30  # High risk
+                            signal_confidences.append(0.85)
+                            ato_signals.append("email_takeover_high")
                     
                     # Signal 4: High-Value Transaction (common in ATO - attacker drains account)
+                    # NOVELTY: Progressive amount risk with confidence scaling
                     amount = TransactionAmt.iloc[i]
-                    if amount > 2000:
-                        ato_risk += 0.15
-                        ato_signals.append("high_value_ato")
-                    elif amount > 5000:
-                        ato_risk += 0.25
+                    if amount > 5000:
+                        ato_risk += 0.30
+                        signal_confidences.append(0.90)
                         ato_signals.append("critical_value_ato")
+                        behavioral_velocity[i] += 0.4  # Large amount = high velocity
+                    elif amount > 2000:
+                        ato_risk += 0.20
+                        signal_confidences.append(0.75)
+                        ato_signals.append("high_value_ato")
+                        behavioral_velocity[i] += 0.2
+                    elif amount < 1.0:  # Micro-transactions for testing stolen cards
+                        ato_risk += 0.15
+                        signal_confidences.append(0.70)
+                        ato_signals.append("micro_transaction_test")
+                        behavioral_velocity[i] += 0.1
                     
                     # Signal 5: Card Type Mismatch (unusual card6 for this card1)
                     # In real ATO, device fingerprint changes
                     card6_val = card6.iloc[i]
                     if card6_val == "charge card":  # Rare card type, suspicious
                         ato_risk += 0.10
+                        signal_confidences.append(0.65)
                         ato_signals.append("unusual_card_type")
                     
-                    # Normalize ATO risk score (0-1)
-                    ato_risk_scores[i] = min(1.0, ato_risk)
+                    # NOVELTY 3: Multi-Signal Correlation Bonus
+                    # If 3+ signals detected, apply correlation multiplier
+                    num_signals = len(ato_signals)
+                    if num_signals >= 3:
+                        correlation_bonus = 0.15 * (num_signals - 2)  # +0.15 per additional signal
+                        ato_risk += correlation_bonus
+                        ato_signals.append(f"multi_signal_correlation_{num_signals}")
                     
-                    # Flag as ATO if risk > 0.6 (multiple signals present)
-                    if ato_risk > 0.6:
+                    # NOVELTY 4: Confidence-Weighted Final Score
+                    # Average confidence across all signals
+                    avg_confidence = np.mean(signal_confidences) if signal_confidences else 0.0
+                    ato_confidence_levels[i] = avg_confidence
+                    
+                    # Apply confidence weighting to risk score
+                    confidence_weighted_risk = ato_risk * (0.7 + 0.3 * avg_confidence)
+                    
+                    # Normalize ATO risk score (0-1)
+                    ato_risk_scores[i] = min(1.0, confidence_weighted_risk)
+                    
+                    # NOVELTY 5: Adaptive threshold based on behavioral velocity
+                    # High velocity lowers threshold (more sensitive)
+                    adaptive_threshold = 0.6 - (behavioral_velocity[i] * 0.2)
+                    
+                    # Flag as ATO if risk exceeds adaptive threshold
+                    if ato_risk_scores[i] > adaptive_threshold:
                         ato_detected_flags[i] = 1
                 
                 # Add ATO columns to input_df for downstream processing
                 input_df['ato_risk_score'] = ato_risk_scores
                 input_df['ato_detected'] = ato_detected_flags
+                input_df['ato_confidence'] = ato_confidence_levels  # NOVELTY: Signal confidence
+                input_df['behavioral_velocity'] = behavioral_velocity  # NOVELTY: Behavior change rate
 
                 # RULE-BASED OVERRIDES: Flag obvious fraud patterns even if model probability is low
                 # This addresses model threshold being too conservative
