@@ -15,6 +15,9 @@ RUN mkdir -p /app/models && chown -R airflow:root /app
 # Switch to airflow user
 USER airflow
 
+# Add dags directory to Python path for imports
+ENV PYTHONPATH="${PYTHONPATH}:/opt/airflow/dags"
+
 # Copy requirements file
 COPY requirements.txt /tmp/requirements.txt
 
