@@ -38,9 +38,9 @@ from pyspark.sql.types import (
     IntegerType, DoubleType, TimestampType
 )
 
-# Import velocity service and ATO detection
+# Import velocity service
 from velocity_service import VelocityFeatureService
-from ato_detection_service import ATODetectionService
+# ATODetectionService not used - pseudo-ATO detection implemented inline in UDF
 
 # Configure logging
 logging.basicConfig(
