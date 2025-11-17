@@ -514,6 +514,8 @@ class EnhancedFraudDetectionInference:
             card6: pd.Series,
             addr1: pd.Series,
             addr2: pd.Series,
+            dist1: pd.Series,
+            dist2: pd.Series,
             P_emaildomain: pd.Series,
             R_emaildomain: pd.Series,
             ProductCD: pd.Series
@@ -558,6 +560,10 @@ class EnhancedFraudDetectionInference:
                     # Address columns (required by pipeline)
                     'addr1': addr1.fillna(-1).astype('int32'),
                     'addr2': addr2.fillna(-1).astype('int32'),
+                    
+                    # Distance columns (for ATO detection)
+                    'dist1': dist1.fillna(-1).astype('float32'),
+                    'dist2': dist2.fillna(-1).astype('float32'),
                     
                     # Email columns (required by pipeline)
                     'P_emaildomain': P_emaildomain.fillna("unknown"),
@@ -619,6 +625,90 @@ class EnhancedFraudDetectionInference:
                 else:
                     # Single model (calibrated or uncalibrated)
                     probabilities = calibrated_model.predict_proba(input_transformed)[:, 1]
+
+                # ========== EMAIL RISK ASSESSMENT ==========
+                RISKY_DOMAINS = {
+                    'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
+                    'yopmail.com', '10minutemail.com', 'guerrillamail.com'
+                }
+                email_risky = P_emaildomain.isin(RISKY_DOMAINS) | R_emaildomain.isin(RISKY_DOMAINS)
+                
+                # ========== TIME-BASED RISK (Night transactions) ==========
+                from datetime import datetime
+                current_hour = datetime.now().hour
+                dt_is_night = pd.Series([1 if (current_hour >= 22 or current_hour <= 6) else 0] * n)
+                
+                # ========== PSEUDO-ATO DETECTION (IEEE-CIS Compatible) ==========
+                # Since IEEE-CIS lacks user_id, we use card1 as "user proxy" for demo purposes
+                # This demonstrates ATO patterns even without true user tracking
+                
+                ato_risk_scores = np.zeros(n)
+                ato_detected_flags = np.zeros(n, dtype=int)
+                
+                for i in range(n):
+                    ato_signals = []
+                    ato_risk = 0.0
+                    
+                    # Signal 1: Geographic Anomaly (uses IEEE-CIS dist1, dist2 fields)
+                    # dist1 = distance between address and card, dist2 = distance between address and email
+                    if 'dist1' in input_df.columns and not pd.isna(input_df.loc[input_df.index[i], 'dist1']):
+                        dist1_val = input_df.loc[input_df.index[i], 'dist1']
+                        if dist1_val > 1000:  # >1000km distance = suspicious
+                            ato_risk += 0.30
+                            ato_signals.append("geo_anomaly_dist1")
+                    
+                    if 'dist2' in input_df.columns and not pd.isna(input_df.loc[input_df.index[i], 'dist2']):
+                        dist2_val = input_df.loc[input_df.index[i], 'dist2']
+                        if dist2_val > 2000:  # >2000km distance = highly suspicious
+                            ato_risk += 0.25
+                            ato_signals.append("geo_anomaly_dist2")
+                    
+                    # Signal 2: Device/Location Change (card + address combination change)
+                    # New card-addr combo compared to historical pattern (Magic UID concept)
+                    card1_val = card1.iloc[i]
+                    addr1_val = addr1.iloc[i]
+                    if card1_val != -1 and addr1_val != -1:
+                        # In real ATO, we'd check if this card-addr combo is NEW for this "user"
+                        # For demo: Flag unusual combinations (low card1 + high addr1 = suspicious)
+                        if card1_val < 5000 and addr1_val > 400:
+                            ato_risk += 0.20
+                            ato_signals.append("device_location_mismatch")
+                    
+                    # Signal 3: Email Domain Mismatch (P_emaildomain vs R_emaildomain)
+                    # In real ATO, attacker changes email to disposable domain
+                    p_email = P_emaildomain.iloc[i]
+                    r_email = R_emaildomain.iloc[i]
+                    if p_email != r_email and (p_email in ['tempmail.com', 'mailinator.com', 'guerrillamail.com', 
+                                                            'yopmail.com', '10minutemail.com', 'anonymous.com']):
+                        ato_risk += 0.35
+                        ato_signals.append("email_takeover_pattern")
+                    
+                    # Signal 4: High-Value Transaction (common in ATO - attacker drains account)
+                    amount = TransactionAmt.iloc[i]
+                    if amount > 2000:
+                        ato_risk += 0.15
+                        ato_signals.append("high_value_ato")
+                    elif amount > 5000:
+                        ato_risk += 0.25
+                        ato_signals.append("critical_value_ato")
+                    
+                    # Signal 5: Card Type Mismatch (unusual card6 for this card1)
+                    # In real ATO, device fingerprint changes
+                    card6_val = card6.iloc[i]
+                    if card6_val == "charge card":  # Rare card type, suspicious
+                        ato_risk += 0.10
+                        ato_signals.append("unusual_card_type")
+                    
+                    # Normalize ATO risk score (0-1)
+                    ato_risk_scores[i] = min(1.0, ato_risk)
+                    
+                    # Flag as ATO if risk > 0.6 (multiple signals present)
+                    if ato_risk > 0.6:
+                        ato_detected_flags[i] = 1
+                
+                # Add ATO columns to input_df for downstream processing
+                input_df['ato_risk_score'] = ato_risk_scores
+                input_df['ato_detected'] = ato_detected_flags
 
                 # RULE-BASED OVERRIDES: Flag obvious fraud patterns even if model probability is low
                 # This addresses model threshold being too conservative
@@ -776,16 +866,23 @@ class EnhancedFraudDetectionInference:
                             if 'amt_spike_1h' in input_df.columns and input_df.loc[input_df.index[i], 'amt_spike_1h'] > 0.8:
                                 factors.append("amount_spike")
                         
-                        # ATO-based risk (HIGHEST PRIORITY)
+                        # ATO-based risk (HIGHEST PRIORITY - NEW FEATURE)
                         if 'ato_detected' in input_df.columns and input_df.loc[input_df.index[i], 'ato_detected'] == 1:
-                            ato_confidence = input_df.loc[input_df.index[i], 'ato_confidence']
-                            factors.append(f"ACCOUNT_TAKEOVER_{ato_confidence}")
+                            ato_risk_score = input_df.loc[input_df.index[i], 'ato_risk_score']
+                            factors.append(f"ACCOUNT_TAKEOVER_DETECTED")
+                            # Add specific ATO signals
+                            if 'dist1' in input_df.columns and input_df.loc[input_df.index[i], 'dist1'] > 1000:
+                                factors.append("ato_geo_anomaly")
+                            if email_risky.iloc[i]:
+                                factors.append("ato_email_takeover")
                         if 'ato_risk_score' in input_df.columns:
                             ato_risk = input_df.loc[input_df.index[i], 'ato_risk_score']
                             if ato_risk > 0.8:
                                 factors.append("critical_ato_risk")
                             elif ato_risk > 0.6:
                                 factors.append("high_ato_risk")
+                            elif ato_risk > 0.3:
+                                factors.append("medium_ato_risk")
 
                         # Rule-based flag indicator
                         if rule_based_flags[i]:
@@ -817,7 +914,7 @@ class EnhancedFraudDetectionInference:
                     "risk_factors": ["processing_error"] * n
                 })
 
-        # Apply predictions (pass only raw IEEE-CIS columns)
+        # Apply predictions (pass IEEE-CIS columns + dist fields for ATO detection)
         prediction_df = feature_df.withColumn(
             "prediction_result",
             predict_with_risk_udf(
@@ -831,6 +928,8 @@ class EnhancedFraudDetectionInference:
                 col("card6"),
                 col("addr1"),
                 col("addr2"),
+                coalesce(col("dist1"), lit(-1.0)),  # Handle missing dist1
+                coalesce(col("dist2"), lit(-1.0)),  # Handle missing dist2
                 col("P_emaildomain"),
                 col("R_emaildomain"),
                 col("ProductCD")
@@ -852,10 +951,11 @@ class EnhancedFraudDetectionInference:
             col("decision"),
             col("risk_factors"),
             col("timestamp"),
-            col("amount"),
-            col("user_id"),
-            col("merchant"),
-            col("location")
+            col("TransactionAmt").alias("amount"),
+            col("card1").cast("string").alias("card"),
+            col("card4").alias("card_type"),
+            col("P_emaildomain").alias("email_domain"),
+            col("ProductCD").alias("product")
         )
 
         # Split into fraud and legit streams
