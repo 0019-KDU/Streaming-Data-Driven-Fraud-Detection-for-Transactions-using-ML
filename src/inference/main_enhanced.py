@@ -183,6 +183,24 @@ class EnhancedFraudDetectionInference:
         self.broadcast_model = self.spark.sparkContext.broadcast(self.model)
         self.broadcast_pipeline = self.spark.sparkContext.broadcast(self.feature_pipeline)
 
+        # Load inference configuration
+        if self.model and 'adaptive_threshold_system' in self.model:
+            self.adaptive_threshold_system = self.model['adaptive_threshold_system']
+            self.threshold = self.adaptive_threshold_system.current_threshold
+            logger.info(f"✓ Using adaptive threshold from trained model: {self.threshold:.4f}")
+        else:
+            self.adaptive_threshold_system = None
+            # Use optimal threshold from training (0.0564) if config is too high
+            config_threshold = self.config["inference"]["threshold"]
+            self.threshold = 0.0564 if config_threshold > 0.1 else config_threshold
+            logger.info(f"Using threshold: {self.threshold} (Config: {config_threshold})")
+
+        self.risk_bands = self.config["inference"]["risk_bands"]
+        logger.info(f"Risk bands: HIGH={self.risk_bands['high']}, MEDIUM={self.risk_bands['medium']}")
+        
+    def _check_mlflow_connectivity(self):
+        """Check MLflow server connectivity and model availability"""
+        if not self.config.get("mlflow", {}).get("tracking_uri"):
             logger.warning("MLflow not configured, will use local models")
             return False
 
