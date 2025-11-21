@@ -1112,6 +1112,7 @@ class IEEECISFraudTraining:
             'adaptive_threshold_system': self.adaptive_threshold_system
         }
 
+        # Save to primary location (models/)
         joblib.dump(artifact_bundle, model_path)
         logger.info(f"  Model bundle saved to: {model_path}")
 
@@ -1120,12 +1121,28 @@ class IEEECISFraudTraining:
         self.feature_pipeline.scaler = self.scaler
         self.feature_pipeline.feature_names = self.all_features
 
-        # Save feature pipeline separately for inference compatibility
+        # Save feature pipeline to primary location (models/)
         pipeline_path = self.config["training"]["feature_pipeline_path"]
         pipeline_dir = os.path.dirname(pipeline_path)
         os.makedirs(pipeline_dir, exist_ok=True)
         joblib.dump(self.feature_pipeline, pipeline_path)
         logger.info(f"  Feature pipeline (with transform() method) saved to: {pipeline_path}")
+
+        # 🆕 ALSO save to inference directory for deployment
+        inference_dir = "/app/inference"
+        if os.path.exists(inference_dir):
+            inference_model_path = os.path.join(inference_dir, "fraud_detection_model.pkl")
+            inference_pipeline_path = os.path.join(inference_dir, "feature_pipeline.pkl")
+            
+            joblib.dump(artifact_bundle, inference_model_path)
+            joblib.dump(self.feature_pipeline, inference_pipeline_path)
+            
+            logger.info(f"  ✅ Model also saved to inference directory:")
+            logger.info(f"     - {inference_model_path}")
+            logger.info(f"     - {inference_pipeline_path}")
+        else:
+            logger.warning(f"  ⚠️  Inference directory not found: {inference_dir}")
+            logger.warning(f"     Models saved only to: {model_dir}")
 
     def log_to_mlflow(
         self,

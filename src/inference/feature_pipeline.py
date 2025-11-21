@@ -40,16 +40,21 @@ class IEEECISFeaturePipeline:
             paths = [
                 os.path.join(os.path.dirname(__file__), 'agg_maps.pkl'),
                 'agg_maps.pkl',
+                '/app/inference/agg_maps.pkl',  # Fixed path
                 '/app/src/inference/agg_maps.pkl'
             ]
             for path in paths:
                 if os.path.exists(path):
                     try:
                         self.agg_maps = joblib.load(path)
-                        # print(f"Loaded {len(self.agg_maps)} aggregation maps from {path}")
-                        break
+                        print(f"✅ Loaded {len(self.agg_maps)} aggregation maps from {path}")  # Enable logging
+                        return  # Exit after successful load
                     except Exception as e:
-                        print(f"Failed to load agg_maps from {path}: {e}")
+                        print(f"❌ Failed to load agg_maps from {path}: {e}")
+            
+            # If we get here, no agg_maps were loaded
+            print("⚠️  WARNING: No agg_maps.pkl found! This will cause low fraud probabilities.")
+            print(f"   Searched paths: {paths}")
 
     def fit(self, train_df: pd.DataFrame, feature_names: list):
         """
