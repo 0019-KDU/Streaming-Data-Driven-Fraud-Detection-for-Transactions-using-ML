@@ -19,17 +19,16 @@ url = "http://localhost:8000/api/v1/transactions/submit"
 def send_transaction(payload, label):
     print(f"\nSending {label} transaction (ID: {payload.get('TransactionID')})...")
     try:
-        # Add timestamp if missing (needed for new fix)
-        if 'TransactionDT' in payload:
-            # Keep original DT for consistency
-            pass
-        
         headers = {'Content-Type': 'application/json'}
-        response = requests.post(url, data=json.dumps(payload), headers=headers)
+        response = requests.post(url, json=payload, headers=headers)
         
         if response.status_code == 200:
             print(f"✅ Success! Status: {response.status_code}")
             print(f"Response: {response.json()}")
+            print("\nTo verify the prediction probability:")
+            print("1. Check the inference logs:")
+            print("   docker logs fraud-inference")
+            print("2. Or consume the 'fraud_predictions' Kafka topic.")
         else:
             print(f"❌ Failed. Status: {response.status_code}")
             print(f"Response: {response.text}")
