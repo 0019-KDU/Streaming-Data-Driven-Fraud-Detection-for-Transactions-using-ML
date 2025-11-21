@@ -15,7 +15,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -49,7 +49,7 @@ class TransactionSubmitRequest(BaseModel):
 
     Supports IEEE-CIS fields and allows extra fields for flexibility
     """
-    TransactionID: Optional[str] = Field(None, description="Unique transaction identifier (auto-generated if not provided)")
+    TransactionID: Optional[Union[str, int]] = Field(None, description="Unique transaction identifier (auto-generated if not provided)")
     TransactionDT: Optional[float] = Field(None, description="Seconds offset from reference time")
     TransactionAmt: float = Field(..., description="Transaction amount", gt=0)
     ProductCD: Optional[str] = Field("W", description="Product code (W, H, C, S, R)")
