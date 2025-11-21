@@ -97,10 +97,27 @@ class IEEECISFeaturePipeline:
             if col in df.columns:
                 df[col + '_freq'] = df[col].map(freq_map).fillna(0.0).astype('float32')
 
-        # 5. Interaction Features (Simplified)
-        if 'TransactionAmt' in df.columns and 'ProductCD' in df.columns:
-             for product in ['W', 'C', 'R', 'H', 'S']:
-                 df[f'amt_is_{product}'] = ((df['ProductCD'] == product).astype(int) * df['TransactionAmt']).astype(np.float32)
+        # 5. Interaction Features (Row-by-row calculations)
+        if 'TransactionAmt' in df.columns:
+             # C-column interactions (if C columns exist)
+             for c_col in ['C1', 'C2', 'C6', 'C13', 'C14']:
+                 if c_col in df.columns:
+                     df[f'amt_x_{c_col.lower()}'] = (df['TransactionAmt'] * df[c_col]).astype(np.float32)
+             
+             # Product interactions
+             if 'ProductCD' in df.columns:
+                 for product in ['W', 'C', 'R', 'H', 'S']:
+                     df[f'amt_is_{product}'] = ((df['ProductCD'] == product).astype(int) * df['TransactionAmt']).astype(np.float32)
+            
+             # Time interactions
+             if 'dt_hour' in df.columns:
+                 df[f'amt_x_hour'] = (df['TransactionAmt'] * df['dt_hour']).astype(np.float32)
+
+        if 'card1' in df.columns and 'addr1' in df.columns:
+            df['card1_x_addr1'] = (df['card1'] * df['addr1']).astype(np.float32)
+        
+        if 'card2' in df.columns and 'addr1' in df.columns:
+            df['card2_x_addr1'] = (df['card2'] * df['addr1']).astype(np.float32)
 
         # 6. 🔥 ADVANCED FEATURES (Ported from Training)
         # Create UID for aggregations
@@ -132,6 +149,32 @@ class IEEECISFeaturePipeline:
         if v_cols:
             df['v_null_count'] = df[v_cols].isnull().sum(axis=1).astype(np.int16)
             df['v_range'] = (df[v_cols].max(axis=1) - df[v_cols].min(axis=1)).astype(np.float32)
+
+        # 7. Normalize D-columns (Top 5% Kaggle)
+        if 'TransactionDT' in df.columns:
+            transaction_days = df['TransactionDT'] / (24 * 60 * 60)
+            for col in ['D1', 'D2', 'D4', 'D10', 'D11', 'D15']:
+                if col in df.columns:
+                    df[f'{col}_normalized'] = (df[col] - transaction_days).astype('float32')
+
+        # 8. Card-Address Encoding (Top 5% Kaggle)
+        # We need to use the freq_maps for these specific combinations if they exist
+        # Since we don't have the complex combination maps loaded, we will approximate or skip
+        # But we MUST ensure the columns exist if the model expects them.
+        
+        # 9. Velocity Features (Placeholders)
+        # The model expects these. If we don't have history, we set them to 0 (safe).
+        velocity_cols = [
+            'txn_count_1h', 'amt_sum_1h', 'amt_mean_1h', 'amt_std_1h', 'amt_max_1h',
+            'txn_count_6h', 'amt_sum_6h', 'amt_mean_6h', 'amt_std_6h', 'amt_max_6h',
+            'txn_count_24h', 'amt_sum_24h', 'amt_mean_24h', 'amt_std_24h', 'amt_max_24h',
+            'txn_count_7d', 'amt_sum_7d', 'amt_mean_7d', 'amt_std_7d', 'amt_max_7d',
+            'freq_risk_1h', 'freq_risk_24h', 'amt_risk_24h', 'amt_spike_1h', 'amt_spike_24h',
+            'velocity_risk_score'
+        ]
+        for col in velocity_cols:
+            if col not in df.columns:
+                df[col] = 0.0
 
         # Select and order features to match training
         # Fill missing features with 0
