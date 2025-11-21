@@ -400,6 +400,19 @@ class EnhancedFraudDetectionInference:
             StructField("dist2", DoubleType(), True),
             StructField("P_emaildomain", StringType(), True),
             StructField("R_emaildomain", StringType(), True),
+            # C columns
+            StructField("C1", DoubleType(), True), StructField("C2", DoubleType(), True),
+            StructField("C3", DoubleType(), True), StructField("C4", DoubleType(), True),
+            StructField("C5", DoubleType(), True), StructField("C6", DoubleType(), True),
+            StructField("C7", DoubleType(), True), StructField("C8", DoubleType(), True),
+            StructField("C9", DoubleType(), True), StructField("C10", DoubleType(), True),
+            StructField("C11", DoubleType(), True), StructField("C12", DoubleType(), True),
+            StructField("C13", DoubleType(), True), StructField("C14", DoubleType(), True),
+            # D columns
+            StructField("D1", DoubleType(), True), StructField("D2", DoubleType(), True),
+            StructField("D3", DoubleType(), True), StructField("D4", DoubleType(), True),
+            StructField("D5", DoubleType(), True), StructField("D10", DoubleType(), True),
+            StructField("D11", DoubleType(), True), StructField("D15", DoubleType(), True),
         ])
 
         # Create streaming DataFrame
@@ -512,19 +525,16 @@ class EnhancedFraudDetectionInference:
             transaction_id: pd.Series,
             TransactionAmt: pd.Series,
             TransactionDT: pd.Series,
-            card1: pd.Series,
-            card2: pd.Series,
-            card3: pd.Series,
-            card4: pd.Series,
-            card5: pd.Series,
-            card6: pd.Series,
-            addr1: pd.Series,
-            addr2: pd.Series,
-            dist1: pd.Series,
-            dist2: pd.Series,
-            P_emaildomain: pd.Series,
-            R_emaildomain: pd.Series,
-            ProductCD: pd.Series
+            card1: pd.Series, card2: pd.Series, card3: pd.Series, card4: pd.Series, card5: pd.Series, card6: pd.Series,
+            addr1: pd.Series, addr2: pd.Series,
+            dist1: pd.Series, dist2: pd.Series,
+            P_emaildomain: pd.Series, R_emaildomain: pd.Series,
+            ProductCD: pd.Series,
+            C1: pd.Series, C2: pd.Series, C3: pd.Series, C4: pd.Series, C5: pd.Series,
+            C6: pd.Series, C7: pd.Series, C8: pd.Series, C9: pd.Series, C10: pd.Series,
+            C11: pd.Series, C12: pd.Series, C13: pd.Series, C14: pd.Series,
+            D1: pd.Series, D2: pd.Series, D3: pd.Series, D4: pd.Series, D5: pd.Series,
+            D10: pd.Series, D11: pd.Series, D15: pd.Series
         ) -> pd.DataFrame:
             """
             Vectorized UDF for fraud prediction (Updated for 0.9279 AUC model)
@@ -551,6 +561,15 @@ class EnhancedFraudDetectionInference:
                     'TransactionAmt': TransactionAmt.fillna(0).astype('float32'),
                     'TransactionDT': dt_values,
                     
+                    # C columns
+                    'C1': C1.fillna(0), 'C2': C2.fillna(0), 'C3': C3.fillna(0), 'C4': C4.fillna(0), 'C5': C5.fillna(0),
+                    'C6': C6.fillna(0), 'C7': C7.fillna(0), 'C8': C8.fillna(0), 'C9': C9.fillna(0), 'C10': C10.fillna(0),
+                    'C11': C11.fillna(0), 'C12': C12.fillna(0), 'C13': C13.fillna(0), 'C14': C14.fillna(0),
+                    
+                    # D columns
+                    'D1': D1.fillna(0), 'D2': D2.fillna(0), 'D3': D3.fillna(0), 'D4': D4.fillna(0), 'D5': D5.fillna(0),
+                    'D10': D10.fillna(0), 'D11': D11.fillna(0), 'D15': D15.fillna(0),
+
                     # Card columns (required by pipeline)
                     'card1': card1.fillna(-1).astype('int32'),
                     'card2': card2.fillna(-1).astype('int32'),
@@ -993,7 +1012,14 @@ class EnhancedFraudDetectionInference:
                 coalesce(col("dist2"), lit(-1.0)),  # Handle missing dist2
                 col("P_emaildomain"),
                 col("R_emaildomain"),
-                col("ProductCD")
+                col("ProductCD"),
+                # C columns
+                col("C1"), col("C2"), col("C3"), col("C4"), col("C5"),
+                col("C6"), col("C7"), col("C8"), col("C9"), col("C10"),
+                col("C11"), col("C12"), col("C13"), col("C14"),
+                # D columns
+                col("D1"), col("D2"), col("D3"), col("D4"), col("D5"),
+                col("D10"), col("D11"), col("D15")
             )
         )
 
