@@ -102,6 +102,37 @@ class IEEECISFeaturePipeline:
              for product in ['W', 'C', 'R', 'H', 'S']:
                  df[f'amt_is_{product}'] = ((df['ProductCD'] == product).astype(int) * df['TransactionAmt']).astype(np.float32)
 
+        # 6. 🔥 ADVANCED FEATURES (Ported from Training)
+        # Create UID for aggregations
+        uid_parts = []
+        if 'card1' in df.columns: uid_parts.append(df['card1'].fillna(-999).astype(str))
+        if 'addr1' in df.columns: uid_parts.append(df['addr1'].fillna(-999).astype(str))
+        if 'P_emaildomain' in df.columns: uid_parts.append(df['P_emaildomain'].fillna('na').astype(str))
+        
+        if len(uid_parts) >= 2:
+            df['uid_agg'] = uid_parts[0]
+            for p in uid_parts[1:]:
+                df['uid_agg'] = df['uid_agg'] + '_' + p
+        else:
+            df['uid_agg'] = 'unknown'
+
+        # Magic UID Features
+        df['card1_addr1'] = df['card1'].fillna(-999).astype(str) + '_' + df['addr1'].fillna(-999).astype(str)
+        if 'TransactionDT' in df.columns:
+            df['day'] = df['TransactionDT'] / (24 * 60 * 60)
+            # D1 might be missing, handle gracefully
+            d1_val = df['D1'] if 'D1' in df.columns else 0
+            df['magic_uid'] = df['card1_addr1'].astype(str) + '_' + np.floor(df['day'] - d1_val).fillna(-999).astype(str)
+        else:
+            df['magic_uid'] = df['card1_addr1']
+
+        # V-Column Aggregates (Simplified for Inference)
+        # If V-columns are missing, we can't aggregate them, but we can create the placeholders
+        v_cols = [c for c in df.columns if c.startswith('V')]
+        if v_cols:
+            df['v_null_count'] = df[v_cols].isnull().sum(axis=1).astype(np.int16)
+            df['v_range'] = (df[v_cols].max(axis=1) - df[v_cols].min(axis=1)).astype(np.float32)
+
         # Select and order features to match training
         # Fill missing features with 0
         for feat in self.feature_names:

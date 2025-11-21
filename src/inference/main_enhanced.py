@@ -589,49 +589,10 @@ class EnhancedFraudDetectionInference:
                     # Get base features for VAE
                     base_features = input_df.copy()
 
-                    # Apply frequency encoding
+                    # Apply feature engineering (NOW INCLUDES ALL FEATURES)
                     input_transformed = pipeline.transform(input_df)
-
-                    # 🔥 ADD MISSING FEATURES THAT PIPELINE DOESN'T CREATE
-                    # Email risk features
-                    RISKY_EMAIL_DOMAINS = {'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com', 
-                                          'yopmail.com', '10minutemail.com', 'guerrillamail.com', 'protonmail.com'}
-                    if 'email_risky' not in input_transformed.columns:
-                        input_transformed['email_risky'] = input_df['P_emaildomain'].isin(RISKY_EMAIL_DOMAINS).astype('int8')
-                    if 'is_high_risk_email' not in input_transformed.columns:
-                        input_transformed['is_high_risk_email'] = input_df['P_emaildomain'].isin(RISKY_EMAIL_DOMAINS).astype('int8')
-                    if 'is_disposable_email' not in input_transformed.columns:
-                        input_transformed['is_disposable_email'] = input_df['P_emaildomain'].fillna('').astype(str).str.contains('temp|disposable|guerrilla|throwaway|fake|spam|trash', case=False, regex=True).astype('int8')
-                    if 'email_domain_length' not in input_transformed.columns:
-                        input_transformed['email_domain_length'] = input_df['P_emaildomain'].fillna('').str.len().astype('int8')
-                    if 'email_is_short_domain' not in input_transformed.columns:
-                        input_transformed['email_is_short_domain'] = (input_transformed['email_domain_length'] <= 8).astype('int8')
-                    if 'email_is_generic' not in input_transformed.columns:
-                        input_transformed['email_is_generic'] = input_df['P_emaildomain'].isin(['gmail.com', 'yahoo.com', 'hotmail.com']).astype('int8')
-                    if 'email_match' not in input_transformed.columns:
-                        input_transformed['email_match'] = (input_df['P_emaildomain'] == input_df['R_emaildomain']).fillna(False).astype('int8')
                     
-                    # Card type features
-                    if 'card_is_discover' not in input_transformed.columns:
-                        input_transformed['card_is_discover'] = (input_df['card4'] == 'discover').astype('int8')
-                    if 'card_is_amex' not in input_transformed.columns:
-                        input_transformed['card_is_amex'] = (input_df['card4'] == 'american express').astype('int8')
-                    if 'card_is_charge' not in input_transformed.columns:
-                        input_transformed['card_is_charge'] = (input_df['card6'] == 'charge card').astype('int8')
-                    
-                    # Product features
-                    if 'product_is_C' not in input_transformed.columns:
-                        input_transformed['product_is_C'] = (input_df['ProductCD'] == 'C').astype('int8')
-                    if 'product_is_R' not in input_transformed.columns:
-                        input_transformed['product_is_R'] = (input_df['ProductCD'] == 'R').astype('int8')
-                    
-                    # Distance features
-                    if 'dist1_high' not in input_transformed.columns:
-                        input_transformed['dist1_high'] = (input_df['dist1'].fillna(0) > 1000).astype('int8')
-                    if 'dist2_high' not in input_transformed.columns:
-                        input_transformed['dist2_high'] = (input_df['dist2'].fillna(0) > 1000).astype('int8')
-                    
-                    logger.info(f"  ✅ Added missing fraud detection features to transformed data")
+                    logger.info(f"  ✅ Transformed data shape: {input_transformed.shape}")
                 else:
                     # Fallback: basic encoding
                     logger.warning("Pipeline transform not available, using fallback")
