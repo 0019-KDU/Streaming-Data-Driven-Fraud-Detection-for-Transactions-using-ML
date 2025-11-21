@@ -150,7 +150,7 @@ class KafkaProducerService:
         try:
             self.producer.produce(
                 self.topic,
-                key=transaction.get("TransactionID", transaction.get("transaction_id")),
+                key=str(transaction.get("TransactionID", transaction.get("transaction_id"))),
                 value=json.dumps(transaction),
                 callback=self.delivery_report
             )
@@ -208,6 +208,10 @@ async def submit_transaction(request: TransactionSubmitRequest):
     try:
         # Convert request to dict
         transaction = request.dict()
+        
+        # Ensure TransactionID is a string (handles int input)
+        if transaction.get("TransactionID") is not None:
+            transaction["TransactionID"] = str(transaction["TransactionID"])
 
         # Log submission
         logger.info(f"Received transaction: {transaction['TransactionID']}")
@@ -266,6 +270,11 @@ async def score_transaction_sync(request: TransactionSubmitRequest):
 
         # Convert request to dict
         transaction = request.dict()
+        
+        # Ensure TransactionID is a string (handles int input)
+        if transaction.get("TransactionID") is not None:
+            transaction["TransactionID"] = str(transaction["TransactionID"])
+            
         transaction_id = transaction["TransactionID"]
 
         logger.info(f"Synchronous scoring request: {transaction_id}")
