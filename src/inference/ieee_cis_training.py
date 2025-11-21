@@ -1122,6 +1122,8 @@ class IEEECISFraudTraining:
 
         # Save feature pipeline separately for inference compatibility
         pipeline_path = self.config["training"]["feature_pipeline_path"]
+        pipeline_dir = os.path.dirname(pipeline_path)
+        os.makedirs(pipeline_dir, exist_ok=True)
         joblib.dump(self.feature_pipeline, pipeline_path)
         logger.info(f"  Feature pipeline (with transform() method) saved to: {pipeline_path}")
 
