@@ -7,6 +7,8 @@ that applies the same feature engineering steps used during training.
 
 import numpy as np
 import pandas as pd
+import joblib
+import os
 from typing import Dict, Any, Optional
 from sklearn.preprocessing import RobustScaler
 
@@ -23,12 +25,31 @@ class IEEECISFeaturePipeline:
 
     def __init__(self):
         self.freq_maps: Dict[str, Dict[Any, float]] = {}
+        self.agg_maps: Dict[str, Dict[Any, float]] = {}
         self.scaler: Optional[RobustScaler] = None
         self.feature_names: list = []
         self.risky_domains = {
             'anonymous.com', 'mailinator.com', 'tempmail.com', 'dispostable.com',
             'yopmail.com', '10minutemail.com', 'guerrillamail.com'
         }
+
+    def load_agg_maps(self):
+        """Load aggregation maps from disk if not already loaded"""
+        if not self.agg_maps:
+            # Try common locations
+            paths = [
+                os.path.join(os.path.dirname(__file__), 'agg_maps.pkl'),
+                'agg_maps.pkl',
+                '/app/src/inference/agg_maps.pkl'
+            ]
+            for path in paths:
+                if os.path.exists(path):
+                    try:
+                        self.agg_maps = joblib.load(path)
+                        # print(f"Loaded {len(self.agg_maps)} aggregation maps from {path}")
+                        break
+                    except Exception as e:
+                        print(f"Failed to load agg_maps from {path}: {e}")
 
     def fit(self, train_df: pd.DataFrame, feature_names: list):
         """
@@ -135,6 +156,10 @@ class IEEECISFeaturePipeline:
 
         # Magic UID Features
         df['card1_addr1'] = df['card1'].fillna(-999).astype(str) + '_' + df['addr1'].fillna(-999).astype(str)
+        
+        # Create 'uid' for aggregation lookups (matches training logic: card1+addr1+email)
+        df['uid'] = df['card1'].fillna(-999).astype(str) + '_' + df['addr1'].fillna(-999).astype(str) + '_' + df['P_emaildomain'].fillna('na').astype(str)
+
         if 'TransactionDT' in df.columns:
             df['day'] = df['TransactionDT'] / (24 * 60 * 60)
             # D1 might be missing, handle gracefully
@@ -142,6 +167,77 @@ class IEEECISFeaturePipeline:
             df['magic_uid'] = df['card1_addr1'].astype(str) + '_' + np.floor(df['day'] - d1_val).fillna(-999).astype(str)
         else:
             df['magic_uid'] = df['card1_addr1']
+
+        # 6b. 🔥 APPLY AGGREGATION MAPS (Fix for Train-Serve Skew)
+        self.load_agg_maps()
+        
+        if self.agg_maps:
+            # Helper to safe map
+            def safe_map(series, map_name, default=np.nan):
+                mapping = self.agg_maps.get(map_name, {})
+                return series.map(mapping).fillna(default).astype(np.float32)
+
+            # 1. TransactionAmt / card1 stats
+            if 'TransactionAmt' in df.columns and 'card1' in df.columns:
+                mean_card1 = safe_map(df['card1'], 'TransactionAmt_mean_card1')
+                std_card1 = safe_map(df['card1'], 'TransactionAmt_std_card1')
+                
+                df['TransactionAmt_to_mean_card1'] = df['TransactionAmt'] / mean_card1
+                df['TransactionAmt_to_std_card1'] = df['TransactionAmt'] / std_card1
+                df['TransactionAmt_card1_mean'] = mean_card1
+                df['TransactionAmt_card1_std'] = std_card1
+
+            # 2. D15 / card1 stats
+            if 'D15' in df.columns and 'card1' in df.columns:
+                mean_d15_card1 = safe_map(df['card1'], 'D15_mean_card1')
+                std_d15_card1 = safe_map(df['card1'], 'D15_std_card1')
+                
+                df['D15_to_mean_card1'] = df['D15'] / mean_d15_card1
+                df['D15_to_std_card1'] = df['D15'] / std_d15_card1
+
+            # 3. D15 / addr1 stats
+            if 'D15' in df.columns and 'addr1' in df.columns:
+                mean_d15_addr1 = safe_map(df['addr1'], 'D15_mean_addr1')
+                std_d15_addr1 = safe_map(df['addr1'], 'D15_std_addr1')
+                
+                df['D15_to_mean_addr1'] = df['D15'] / mean_d15_addr1
+                df['D15_to_std_addr1'] = df['D15'] / std_d15_addr1
+            
+            # 4. Magic UID Aggregates (Mapped from 'magic_uid')
+            # Map 'magic_uid_X_mean' features using 'magic_uid' maps
+            # We iterate through feature names to find what we need
+            for feat in self.feature_names:
+                if feat.startswith('magic_uid_') and feat.endswith('_mean'):
+                    # Extract target col: magic_uid_C4_mean -> C4
+                    target = feat.replace('magic_uid_', '').replace('_mean', '')
+                    map_name = f"{target}_mean_uid"
+                    if map_name in self.agg_maps:
+                        df[feat] = safe_map(df['magic_uid'], map_name)
+                
+                elif feat.startswith('magic_uid_') and feat.endswith('_std'):
+                    target = feat.replace('magic_uid_', '').replace('_std', '')
+                    map_name = f"{target}_std_uid"
+                    if map_name in self.agg_maps:
+                        df[feat] = safe_map(df['magic_uid'], map_name)
+                
+                elif feat.startswith('magic_uid_') and feat.endswith('_nunique'):
+                    target = feat.replace('magic_uid_', '').replace('_nunique', '')
+                    # Handle special cases
+                    if target == 'email': target = 'P_emaildomain'
+                    if target == 'id02': target = 'id_02'
+                    
+                    map_name = f"{target}_nunique_uid"
+                    if map_name in self.agg_maps:
+                        df[feat] = safe_map(df['magic_uid'], map_name)
+
+            # 5. Fraud Rates
+            fraud_rate_cols = [c for c in self.feature_names if c.endswith('_fraud_rate')]
+            for feat in fraud_rate_cols:
+                # DeviceInfo_fraud_rate -> DeviceInfo
+                target = feat.replace('_fraud_rate', '')
+                map_name = f"isFraud_mean_{target}"
+                if map_name in self.agg_maps and target in df.columns:
+                    df[feat] = safe_map(df[target], map_name)
 
         # V-Column Aggregates (Simplified for Inference)
         # If V-columns are missing, we can't aggregate them, but we can create the placeholders

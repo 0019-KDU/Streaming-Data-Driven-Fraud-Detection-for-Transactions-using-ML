@@ -31,3 +31,8 @@ src/config.yaml
 .idea/
 data
 ieee-fraud-detection
+
+# Large Model Artifacts
+*.pkl
+src/inference/agg_maps.pkl
+src/models/fraud_detection_model.pkl

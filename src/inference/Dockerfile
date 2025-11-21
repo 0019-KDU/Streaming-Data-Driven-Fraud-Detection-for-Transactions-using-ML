@@ -58,6 +58,9 @@ COPY main_enhanced.py main.py
 COPY ieee_cis_training.py ieee_cis_training.py
 COPY velocity_service.py velocity_service.py
 COPY feature_pipeline.py feature_pipeline.py
+COPY agg_maps.pkl agg_maps.pkl
+COPY fraud_detection_model.pkl fraud_detection_model.pkl
+COPY feature_pipeline.pkl feature_pipeline.pkl
 
 # Stage 2: Runtime stage
 FROM python:3.12-slim-bookworm as runtime
@@ -84,6 +87,9 @@ COPY --from=builder /app/main.py main.py
 COPY --from=builder /app/ieee_cis_training.py ieee_cis_training.py
 COPY --from=builder /app/velocity_service.py velocity_service.py
 COPY --from=builder /app/feature_pipeline.py feature_pipeline.py
+COPY --from=builder /app/agg_maps.pkl agg_maps.pkl
+COPY --from=builder /app/fraud_detection_model.pkl fraud_detection_model.pkl
+COPY --from=builder /app/feature_pipeline.pkl feature_pipeline.pkl
 
 # Environment configuration
 ENV SPARK_HOME=/spark \
