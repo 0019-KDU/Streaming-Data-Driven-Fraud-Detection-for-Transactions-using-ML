@@ -35,6 +35,10 @@ class IEEECISFeaturePipeline:
 
     def load_agg_maps(self):
         """Load aggregation maps from disk if not already loaded"""
+        # Initialize agg_maps if it doesn't exist (backward compatibility)
+        if not hasattr(self, 'agg_maps'):
+            self.agg_maps = {}
+        
         if not self.agg_maps:
             # Try common locations
             paths = [
