@@ -183,22 +183,6 @@ class EnhancedFraudDetectionInference:
         self.broadcast_model = self.spark.sparkContext.broadcast(self.model)
         self.broadcast_pipeline = self.spark.sparkContext.broadcast(self.feature_pipeline)
 
-        # Load inference configuration
-        if self.model and 'adaptive_threshold_system' in self.model:
-            self.adaptive_threshold_system = self.model['adaptive_threshold_system']
-            self.threshold = self.adaptive_threshold_system.current_threshold
-            logger.info(f"✓ Using adaptive threshold from trained model: {self.threshold:.4f}")
-        else:
-            self.adaptive_threshold_system = None
-            self.threshold = self.config["inference"]["threshold"]
-            logger.info(f"Using fixed threshold from config: {self.threshold}")
-
-        self.risk_bands = self.config["inference"]["risk_bands"]
-        logger.info(f"Risk bands: HIGH={self.risk_bands['high']}, MEDIUM={self.risk_bands['medium']}")
-        
-    def _check_mlflow_connectivity(self):
-        """Check MLflow server connectivity and model availability"""
-        if not self.config.get("mlflow", {}).get("tracking_uri"):
             logger.warning("MLflow not configured, will use local models")
             return False
 
@@ -501,7 +485,6 @@ class EnhancedFraudDetectionInference:
         # Get broadcast references
         broadcast_model = self.broadcast_model
         broadcast_pipeline = self.broadcast_pipeline
-        threshold = self.threshold
         risk_high = self.risk_bands["high"]
         risk_medium = self.risk_bands["medium"]
 
@@ -510,6 +493,7 @@ class EnhancedFraudDetectionInference:
         def predict_with_risk_udf(
             transaction_id: pd.Series,
             TransactionAmt: pd.Series,
+            TransactionDT: pd.Series,
             card1: pd.Series,
             card2: pd.Series,
             card3: pd.Series,
@@ -526,12 +510,6 @@ class EnhancedFraudDetectionInference:
         ) -> pd.DataFrame:
             """
             Vectorized UDF for fraud prediction (Updated for 0.9279 AUC model)
-
-            CRITICAL CHANGES:
-            1. Passes ONLY raw IEEE-CIS columns to pipeline.transform()
-            2. Pipeline handles ALL feature engineering (88 features)
-            3. No velocity features (disabled in training, not in 1st place solution)
-            4. Matches training pipeline exactly (Magic UID, group aggregations, frequency/mean encoding)
             """
             n = len(TransactionAmt)
 
@@ -544,14 +522,16 @@ class EnhancedFraudDetectionInference:
                     raise ValueError("Model not loaded")
 
                 # 🔥 CRITICAL: Build RAW IEEE-CIS dataframe (pipeline handles ALL feature engineering)
-                # Training pipeline expects ONLY raw IEEE-CIS columns, not pre-engineered features
-                # The pipeline.transform() will create ALL 88 features automatically
                 import time
                 
+                # Use provided TransactionDT or fallback to current time
+                current_time = time.time()
+                dt_values = TransactionDT.fillna(current_time).astype('float64')
+
                 input_df = pd.DataFrame({
                     # Required: TransactionAmt + timestamp for feature engineering
                     'TransactionAmt': TransactionAmt.fillna(0).astype('float32'),
-                    'TransactionDT': pd.Series([time.time()] * n).astype('float64'),  # Unix timestamp
+                    'TransactionDT': dt_values,
                     
                     # Card columns (required by pipeline)
                     'card1': card1.fillna(-1).astype('int32'),
@@ -982,6 +962,7 @@ class EnhancedFraudDetectionInference:
             predict_with_risk_udf(
                 col("transaction_id"),
                 col("TransactionAmt"),
+                col("TransactionDT"),
                 col("card1"),
                 col("card2"),
                 col("card3"),
