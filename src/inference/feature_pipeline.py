@@ -66,10 +66,41 @@ class IEEECISFeaturePipeline:
         """
         df = df.copy()
 
-        # Apply frequency encoding
+        # 1. Amount Features
+        if 'TransactionAmt' in df.columns:
+            df['TransactionAmt'] = df['TransactionAmt'].astype('float32')
+            df['log_TransactionAmt'] = np.log1p(df['TransactionAmt'].fillna(0)).astype('float32')
+            df['sqrt_TransactionAmt'] = np.sqrt(df['TransactionAmt'].fillna(0)).astype('float32')
+
+        # 2. Time Features
+        if 'TransactionDT' in df.columns:
+            # Assume TransactionDT is seconds
+            sec = df['TransactionDT'].astype('float64')
+            df['dt_day'] = (sec // (24*60*60)).astype('int32')
+            df['dt_hour'] = (sec // 3600 % 24).astype('int16')
+            df['dt_wday'] = (df['dt_day'] % 7).astype('int8')
+            df['dt_is_weekend'] = (df['dt_wday'] >= 5).astype('int8')
+            df['dt_is_night'] = ((df['dt_hour'] >= 22) | (df['dt_hour'] <= 6)).astype('int8')
+
+        # 3. Email Features
+        if 'P_emaildomain' in df.columns:
+            df['email_risky'] = df['P_emaildomain'].isin(self.risky_domains).astype('int8')
+            df['email_is_generic'] = df['P_emaildomain'].isin(
+                ['gmail.com', 'yahoo.com', 'hotmail.com']
+            ).astype('int8')
+        
+        if 'P_emaildomain' in df.columns and 'R_emaildomain' in df.columns:
+             df['email_match'] = (df['P_emaildomain'] == df['R_emaildomain']).fillna(False).astype('int8')
+
+        # 4. Apply frequency encoding
         for col, freq_map in self.freq_maps.items():
             if col in df.columns:
                 df[col + '_freq'] = df[col].map(freq_map).fillna(0.0).astype('float32')
+
+        # 5. Interaction Features (Simplified)
+        if 'TransactionAmt' in df.columns and 'ProductCD' in df.columns:
+             for product in ['W', 'C', 'R', 'H', 'S']:
+                 df[f'amt_is_{product}'] = ((df['ProductCD'] == product).astype(int) * df['TransactionAmt']).astype(np.float32)
 
         # Select and order features to match training
         # Fill missing features with 0
