@@ -14,7 +14,7 @@ except FileNotFoundError:
     exit(1)
 
 # API Endpoint
-url = "http://localhost:8000/submit_transaction"
+url = "http://localhost:8000/api/v1/transactions/submit"
 
 def send_transaction(payload, label):
     print(f"\nSending {label} transaction (ID: {payload.get('TransactionID')})...")
