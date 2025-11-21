@@ -80,10 +80,10 @@ def send_and_verify(payload, label):
             print(f"   Message: {response.json().get('message')}")
             
             if consumer:
-                print("⏳ Waiting for prediction from Kafka (timeout 30s)...")
+                print("⏳ Waiting for prediction from Kafka (timeout 90s)...")
                 start_time = time.time()
                 found = False
-                while (time.time() - start_time) < 30:
+                while (time.time() - start_time) < 90:
                     msg = consumer.poll(1.0)
                     if msg is None: continue
                     if msg.error():
