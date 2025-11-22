@@ -1,5 +1,5 @@
 # Clean Spark Inference Service Dockerfile
-FROM bitnami/spark:3.3.2
+FROM bitnami/spark:3.5
 
 USER root
 
@@ -36,6 +36,6 @@ ENV LOG_LEVEL=INFO
 
 # Default command
 CMD ["spark-submit", \
-     "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2", \
-     "--conf", "spark.sql.shuffle.partitions=50", \
-     "/app/src/inference/main_inference.py"]
+    "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0", \
+    "--conf", "spark.sql.shuffle.partitions=50", \
+    "/app/src/inference/main_inference.py"]
