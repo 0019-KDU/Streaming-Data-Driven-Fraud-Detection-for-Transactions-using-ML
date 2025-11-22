@@ -111,6 +111,9 @@ ENV SPARK_HOME=/spark \
 COPY --from=builder /spark/conf/log4j2.properties.template /spark/conf/log4j2.properties
 RUN sed -i 's/rootLogger.level = info/rootLogger.level = error/' /spark/conf/log4j2.properties
 
+# Create checkpoint directory with proper permissions
+RUN mkdir -p /app/checkpoints /app/logs /app/models
+
 # Set permissions
 RUN useradd -m sparkuser && \
     chown -R sparkuser:sparkuser /app /spark
