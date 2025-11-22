@@ -38,6 +38,7 @@ COPY ato_service.py /app/src/inference/
 COPY decision_engine.py /app/src/inference/
 COPY main_simple.py /app/src/inference/
 COPY ieee_cis_training.py /app/
+COPY feature_pipeline.py /app/
 COPY utils/ /app/src/inference/utils/
 
 # Set Python path
