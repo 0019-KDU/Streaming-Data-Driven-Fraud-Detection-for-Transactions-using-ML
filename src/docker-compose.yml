@@ -26,6 +26,9 @@ x-airflow-common: &airflow-common
     MLFLOW_S3_ENDPOINT_URL: "http://minio:9000"
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    AIRFLOW__SMTP__SMTP_HOST: maildev
+    AIRFLOW__SMTP__SMTP_PORT: 1025
+    AIRFLOW__SMTP__SMTP_MAIL_FROM: airflow@fraud-detection.local
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
