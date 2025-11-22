@@ -1,5 +1,5 @@
 # Clean Spark Inference Service Dockerfile
-FROM bitnami/spark:3.5
+FROM apache/spark:3.5.0
 
 USER root
 
