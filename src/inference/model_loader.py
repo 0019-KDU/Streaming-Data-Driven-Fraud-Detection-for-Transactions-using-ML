@@ -65,13 +65,20 @@ class ModelLoader:
                     'n_features': len(self.feature_names)
                 }
             else:
-                # Fallback: assume it's just the model
+                # Fallback: assume it's just the model (raw pickle)
                 self.model = model_bundle
-                logger.warning("Model bundle is not a dict, assuming raw model")
+                self.feature_names = []
+                self.model_metadata = {
+                    'model_type': type(model_bundle).__name__,
+                    'threshold': self.config.model.base_threshold,
+                    'metrics': {},
+                    'n_features': 88  # Default for IEEE-CIS
+                }
+                logger.warning(f"Model bundle is not a dict, loaded raw model: {type(model_bundle)}")
 
             logger.info(
                 f"Model loaded successfully: {self.model_metadata.get('model_type', 'unknown')}, "
-                f"features={len(self.feature_names)}"
+                f"features={self.model_metadata.get('n_features', len(self.feature_names))}"
             )
 
         except Exception as e:
