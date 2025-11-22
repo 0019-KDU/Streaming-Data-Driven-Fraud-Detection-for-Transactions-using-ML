@@ -111,6 +111,15 @@ def predict():
         "timestamp": "2025-11-22T12:34:56.789Z"
     }
     """
+    global model_loader, velocity_service, ato_service, decision_engine, logger
+
+    # Check if services are initialized
+    if model_loader is None or model_loader.model is None:
+        return jsonify({
+            'error': 'Service initializing',
+            'message': 'Model is still loading, please try again in a moment'
+        }), 503
+
     try:
         # Parse input
         transaction = request.get_json()
@@ -277,10 +286,20 @@ def predict_batch():
 
 
 if __name__ == '__main__':
-    # Initialize services
+    # Initialize services before Flask starts
     initialize_services()
+
+    # Verify services are loaded
+    if model_loader is None or model_loader.model is None:
+        print("ERROR: Model failed to load!")
+        exit(1)
+
+    print(f"✓ Services initialized successfully")
+    print(f"✓ Model: {model_loader.model is not None}")
+    print(f"✓ Feature Pipeline: {model_loader.feature_pipeline is not None}")
 
     # Run Flask app
     port = 5000
-    logger.info(f"Starting Flask server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    if logger:
+        logger.info(f"Starting Flask server on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
