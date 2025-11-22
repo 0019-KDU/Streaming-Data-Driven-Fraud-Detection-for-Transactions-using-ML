@@ -78,12 +78,9 @@ model:
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
 
 # Inference Configuration (No VAE)
+# ✅ FIX #4: Removed unused inference.threshold (now loaded from model bundle)
+# Rule-based flags will still catch high-risk transactions
 inference:
-  threshold: 0.15  # Lowered base threshold (no VAE anomaly score)
-  risk_bands:
-    high: 0.30    # Adjusted for non-VAE predictions
-    medium: 0.15  # Adjusted for non-VAE predictions
-  # Rule-based flags will still catch high-risk transactions
   rule_based_thresholds:
     very_high_amount: 10000.0
     very_low_amount: 1.0

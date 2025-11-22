@@ -2611,26 +2611,43 @@ class IEEECISFraudTraining:
 
         # Save main artifact bundle WITHOUT VAE models (just metadata)
         artifact_bundle = {
-            'calibrated_model': model,
+            'model': model,  # Renamed for consistency with inference
+            'calibrated_model': model,  # Keep for backward compatibility
+            'threshold': float(self.best_threshold),  # ✅ FIX #1: Save F1-optimal threshold
             'n_vae_models': 0,
             'scaler': self.scaler,
             'freq_maps': self.freq_maps,
             'feature_names': self.all_features,
-            'adaptive_threshold_system': self.adaptive_threshold_system
+            'adaptive_threshold_system': self.adaptive_threshold_system,
+            'model_type': 'XGBoost',
+            'n_features': len(self.all_features),
+            'training_date': datetime.now().isoformat()
         }
 
         joblib.dump(artifact_bundle, model_path)
         logger.info(f"  Model bundle saved to: {model_path}")
+        logger.info(f"  ✅ F1-optimal threshold saved: {self.best_threshold:.4f}")
 
         # Update the feature pipeline and save it as a proper object with transform() method
         self.feature_pipeline.freq_maps = self.freq_maps
         self.feature_pipeline.scaler = self.scaler
         self.feature_pipeline.feature_names = self.all_features
+        
+        # ✅ FIX #3: Save card aggregation statistics for inference
+        if hasattr(self, 'card1_amt_mean'):
+            self.feature_pipeline.card1_amt_mean = self.card1_amt_mean
+            self.feature_pipeline.card1_amt_std = self.card1_amt_std
+            logger.info("  ✅ Saved card1 aggregation statistics")
+        
+        if hasattr(self, 'card4_amt_mean'):
+            self.feature_pipeline.card4_amt_mean = self.card4_amt_mean
+            self.feature_pipeline.card4_amt_std = self.card4_amt_std
+            logger.info("  ✅ Saved card4 aggregation statistics")
 
         # Save feature pipeline separately for inference compatibility
         pipeline_path = self.config["training"]["feature_pipeline_path"]
         joblib.dump(self.feature_pipeline, pipeline_path)
-        logger.info(f"  Feature pipeline (with transform() method) saved to: {pipeline_path}")
+        logger.info(f"  ✅ Feature pipeline (with transform() + card stats) saved to: {pipeline_path}")
 
     def log_to_mlflow(
         self,

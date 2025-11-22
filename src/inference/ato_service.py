@@ -1,17 +1,25 @@
 """
-Account Takeover (ATO) detection service using Redis.
+Account Takeover (ATO) detection service using Redis for baseline tracking.
 
-Tracks user baselines (geo, device, email) and detects anomalies
-that indicate potential account takeover.
+Detects anomalous behavior patterns that indicate account takeover:
+- Geographic anomalies (unusual locations)
+- Device changes (new devices/browsers)
+- Email mismatches
+- Unusual transaction patterns
+
+Maintains baseline behavior profiles in Redis and compares current
+transactions against historical patterns.
 """
 
 import json
-import math
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Any, Optional
-import redis
+import time
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from datetime import datetime
 
-from .utils.redis_client import get_redis_client
+import redis
+import numpy as np
+
 from .logging_utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -19,259 +27,417 @@ logger = setup_logger(__name__)
 
 @dataclass
 class ATOResult:
-    """Result from ATO analysis."""
-    ato_risk: float         # [0, 1]
-    ato_detected: bool      # True if risk > threshold
-    factors: List[str]      # Risk factor descriptions
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return asdict(self)
+    """Result from ATO check."""
+    ato_risk: float       # 0-1 risk score
+    ato_detected: bool    # True if risk > threshold
+    factors: List[str]    # Human-readable risk factors
+    
+    # Signal breakdown
+    geo_anomaly: float = 0.0
+    device_anomaly: float = 0.0
+    email_anomaly: float = 0.0
+    amount_anomaly: float = 0.0
 
 
 class ATOService:
     """
-    Tracks user behavior baselines and detects Account Takeover attempts.
-
-    For each card1, maintains:
-    - Usual geo locations (distances)
-    - Usual IP addresses / devices
-    - Usual email domains
-    - Usual transaction patterns
+    Redis-backed Account Takeover detection service.
+    
+    Tracks baseline behavior for each card and detects deviations
+    that indicate potential account takeover attacks.
     """
-
-    def __init__(self, config):
+    
+    def __init__(self, redis_client: redis.Redis, config):
         """
         Initialize ATO service.
-
+        
         Args:
-            config: Config object with ATO and Redis settings
+            redis_client: Redis client instance
+            config: Config object with ATO settings
         """
+        self.redis = redis_client
         self.config = config
-        self.redis_client = get_redis_client(config)
-        self.ttl = config.redis.ato_baseline_ttl
-        self.risky_email_domains = set(config.ato.risky_email_domains)
-
-    def _get_baseline_key(self, card1: str) -> str:
-        """Generate Redis key for baseline data."""
-        return f"ato:baseline:{card1}"
-
-    def _haversine_distance(
+        
+        # ✅ FIX #3: Add environment/version namespacing
+        import os
+        self.env = os.getenv('ENVIRONMENT', 'prod')
+        self.model_version = os.getenv('MODEL_VERSION', 'v1')
+        self.key_prefix = f"{self.env}:{self.model_version}"
+        
+        # Risk weights from config
+        self.geo_weight = config.ato.geo_anomaly_weight
+        self.device_weight = config.ato.new_address_ip_weight
+        self.email_weight = config.ato.email_mismatch_weight
+        self.amount_weight = config.ato.high_amount_weight
+        self.card_weight = config.ato.unusual_card_weight
+        
+        # Thresholds
+        self.geo_distance_threshold = config.ato.geo_anomaly_distance
+        self.high_amount_threshold = config.ato.high_amount_threshold
+        self.ato_threshold = config.ato.ato_detection_threshold
+        
+        # Risky domains
+        self.risky_domains = set(config.ato.risky_email_domains)
+        
+        # TTL for baseline (30 days)
+        self.baseline_ttl = config.redis.ato_baseline_ttl
+        
+        logger.info(f"ATOService initialized with namespace: {self.key_prefix}")
+        logger.info(f"ATOService threshold: {self.ato_threshold}")
+    
+    def check_ato(
         self,
-        lat1: float,
-        lon1: float,
-        lat2: float,
-        lon2: float
-    ) -> float:
-        """
-        Calculate great circle distance between two points in kilometers.
-
-        Args:
-            lat1, lon1: First point coordinates
-            lat2, lon2: Second point coordinates
-
-        Returns:
-            Distance in kilometers
-        """
-        R = 6371  # Earth's radius in kilometers
-
-        phi1 = math.radians(lat1)
-        phi2 = math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-
-        a = math.sin(delta_phi / 2) ** 2 + \
-            math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-        return R * c
-
-    def update_baseline(
-        self,
-        card1: str,
-        transaction: Dict[str, Any]
-    ) -> None:
-        """
-        Update baseline profile for a card.
-
-        Args:
-            card1: Card identifier
-            transaction: Transaction dictionary with fields:
-                - addr1, addr2 (addresses)
-                - dist1, dist2 (distances)
-                - P_emaildomain, R_emaildomain
-                - DeviceInfo, DeviceType
-                - card4, card6 (card types)
-                - TransactionAmt
-        """
-        baseline_key = self._get_baseline_key(card1)
-
-        # Get current baseline
-        baseline_data = self.redis_client.get(baseline_key)
-        if baseline_data:
-            baseline = json.loads(baseline_data)
-        else:
-            baseline = {
-                'addresses': [],
-                'email_domains': [],
-                'devices': [],
-                'card_types': [],
-                'avg_amount': 0.0,
-                'transaction_count': 0
-            }
-
-        # Update addresses
-        addr1 = transaction.get('addr1')
-        if addr1 and addr1 not in baseline['addresses']:
-            baseline['addresses'].append(addr1)
-            # Keep only last 5 addresses
-            baseline['addresses'] = baseline['addresses'][-5:]
-
-        # Update email domains
-        for email_field in ['P_emaildomain', 'R_emaildomain']:
-            email = transaction.get(email_field)
-            if email and email not in baseline['email_domains']:
-                baseline['email_domains'].append(email)
-                baseline['email_domains'] = baseline['email_domains'][-5:]
-
-        # Update devices
-        device_info = transaction.get('DeviceInfo')
-        if device_info and device_info not in baseline['devices']:
-            baseline['devices'].append(device_info)
-            baseline['devices'] = baseline['devices'][-5:]
-
-        # Update card types
-        card4 = transaction.get('card4')
-        if card4 and card4 not in baseline['card_types']:
-            baseline['card_types'].append(card4)
-            baseline['card_types'] = baseline['card_types'][-3:]
-
-        # Update average amount (running average)
-        count = baseline['transaction_count']
-        avg = baseline['avg_amount']
-        current_amt = transaction.get('TransactionAmt', 0.0)
-
-        baseline['avg_amount'] = (avg * count + current_amt) / (count + 1)
-        baseline['transaction_count'] = count + 1
-
-        # Save updated baseline
-        self.redis_client.setex(
-            baseline_key,
-            self.ttl,
-            json.dumps(baseline)
-        )
-
-    def analyze_ato(
-        self,
-        card1: str,
-        transaction: Dict[str, Any]
+        card_id: str,
+        transaction_data: Dict
     ) -> ATOResult:
         """
-        Analyze transaction for Account Takeover signals.
-
+        Check ATO risk for a transaction.
+        
         Args:
-            card1: Card identifier
-            transaction: Transaction dictionary
-
+            card_id: Card identifier (card1)
+            transaction_data: Dictionary with transaction fields:
+                - addr1, addr2: Address fields
+                - dist1, dist2: Distance fields
+                - device_info: Device information
+                - device_type: Device type
+                - email_domain: Email domain
+                - amount: Transaction amount
+                - card_type: Card type (card4, card6)
+                
         Returns:
-            ATOResult with risk score and factors
+            ATOResult with risk scores and factors
         """
-        baseline_key = self._get_baseline_key(card1)
-        baseline_data = self.redis_client.get(baseline_key)
-
-        ato_risk = 0.0
-        factors = []
-
-        # If no baseline, this is first transaction (low risk)
-        if not baseline_data:
-            return ATOResult(ato_risk=0.0, ato_detected=False, factors=['first_transaction'])
-
-        baseline = json.loads(baseline_data)
-
-        # 1. Check geo anomaly (distance)
-        dist1 = transaction.get('dist1', 0.0)
-        if dist1 and dist1 > self.config.ato.geo_anomaly_distance:
-            ato_risk += self.config.ato.geo_anomaly_weight
-            factors.append(f"geo_anomaly:{dist1:.0f}km")
-
-        # 2. Check new address
-        addr1 = transaction.get('addr1')
-        if addr1 and addr1 not in baseline['addresses']:
-            ato_risk += self.config.ato.new_address_ip_weight
-            factors.append("new_address")
-
-        # 3. Check email mismatch or risky domain
-        p_email = transaction.get('P_emaildomain', '')
-        r_email = transaction.get('R_emaildomain', '')
-
-        # Email mismatch
-        if p_email and r_email and p_email != r_email:
-            if p_email not in baseline['email_domains'] and r_email not in baseline['email_domains']:
-                ato_risk += self.config.ato.email_mismatch_weight
-                factors.append("email_mismatch_new")
-
-        # Risky email domain
-        if p_email in self.risky_email_domains:
-            ato_risk += self.config.ato.email_mismatch_weight * 0.5
-            factors.append(f"risky_email:{p_email}")
-
-        # 4. Check new device
-        device_info = transaction.get('DeviceInfo')
-        if device_info and device_info not in baseline['devices'] and len(baseline['devices']) > 0:
-            ato_risk += self.config.ato.new_address_ip_weight * 0.5
-            factors.append("new_device")
-
-        # 5. Check high amount (vs baseline)
-        current_amt = transaction.get('TransactionAmt', 0.0)
-        avg_amt = baseline.get('avg_amount', 0.0)
-
-        if current_amt > self.config.ato.high_amount_threshold:
-            ato_risk += self.config.ato.high_amount_weight
-            factors.append(f"high_amount:${current_amt:.0f}")
-        elif avg_amt > 0 and current_amt > 3 * avg_amt:
-            ato_risk += self.config.ato.high_amount_weight * 0.7
-            factors.append(f"amount_3x_baseline:{current_amt/avg_amt:.1f}x")
-
-        # 6. Check unusual card type
-        card4 = transaction.get('card4')
-        if card4 and card4 not in baseline['card_types'] and len(baseline['card_types']) > 0:
-            ato_risk += self.config.ato.unusual_card_weight
-            factors.append(f"unusual_card_type:{card4}")
-
+        # Get baseline for this card
+        baseline = self._get_baseline(card_id)
+        
+        # Calculate individual risk signals
+        geo_anomaly = self._check_geo_anomaly(transaction_data, baseline)
+        device_anomaly = self._check_device_anomaly(transaction_data, baseline)
+        email_anomaly = self._check_email_anomaly(transaction_data, baseline)
+        amount_anomaly = self._check_amount_anomaly(transaction_data, baseline)
+        card_anomaly = self._check_card_type_anomaly(transaction_data, baseline)
+        
+        # Calculate composite ATO risk
+        ato_risk = (
+            geo_anomaly * self.geo_weight +
+            device_anomaly * self.device_weight +
+            email_anomaly * self.email_weight +
+            amount_anomaly * self.amount_weight +
+            card_anomaly * self.card_weight
+        )
+        
         # Cap at 1.0
-        ato_risk = min(1.0, ato_risk)
-
-        # Detect ATO
-        ato_detected = ato_risk >= self.config.ato.ato_detection_threshold
-
-        if ato_detected:
-            logger.warning(f"ATO detected for card1={card1}, risk={ato_risk:.2f}, factors={factors}")
-
+        ato_risk = min(ato_risk, 1.0)
+        
+        # Determine if ATO detected
+        ato_detected = ato_risk >= self.ato_threshold
+        
+        # Identify risk factors
+        factors = self._identify_risk_factors(
+            geo_anomaly, device_anomaly, email_anomaly,
+            amount_anomaly, card_anomaly, transaction_data
+        )
+        
+        # Update baseline with this transaction
+        self._update_baseline(card_id, transaction_data)
+        
         return ATOResult(
             ato_risk=ato_risk,
             ato_detected=ato_detected,
-            factors=factors
+            factors=factors,
+            geo_anomaly=geo_anomaly,
+            device_anomaly=device_anomaly,
+            email_anomaly=email_anomaly,
+            amount_anomaly=amount_anomaly
         )
-
-    def process_transaction(
+    
+    def _get_baseline(self, card_id: str) -> Dict:
+        """Get baseline behavior profile for card from Redis."""
+        key = f"ato:baseline:{card_id}"
+        
+        try:
+            baseline_json = self.redis.get(key)
+            if baseline_json:
+                return json.loads(baseline_json)
+            else:
+                return {}
+        except redis.RedisError as e:
+            logger.warning(f"Redis error getting baseline: {e}")
+            return {}
+    
+    def _update_baseline(self, card_id: str, transaction_data: Dict) -> None:
+        """Update baseline profile with new transaction."""
+        key = f"ato:baseline:{card_id}"
+        
+        try:
+            # Get current baseline
+            baseline = self._get_baseline(card_id)
+            
+            # Update with new transaction data
+            # Use sets to track unique values
+            if 'addr1' in transaction_data:
+                baseline.setdefault('addresses', []).append(
+                    str(transaction_data['addr1'])
+                )
+                # Keep only last 10 addresses
+                baseline['addresses'] = baseline['addresses'][-10:]
+            
+            if 'device_info' in transaction_data:
+                baseline.setdefault('devices', []).append(
+                    str(transaction_data['device_info'])
+                )
+                baseline['devices'] = baseline['devices'][-10:]
+            
+            if 'email_domain' in transaction_data:
+                baseline.setdefault('email_domains', []).append(
+                    str(transaction_data['email_domain'])
+                )
+                baseline['email_domains'] = baseline['email_domains'][-5:]
+            
+            if 'amount' in transaction_data:
+                baseline.setdefault('amounts', []).append(
+                    float(transaction_data['amount'])
+                )
+                baseline['amounts'] = baseline['amounts'][-50:]
+            
+            if 'card_type' in transaction_data:
+                baseline.setdefault('card_types', []).append(
+                    str(transaction_data['card_type'])
+                )
+                baseline['card_types'] = baseline['card_types'][-10:]
+            
+            # Store updated baseline
+            self.redis.setex(
+                key,
+                self.baseline_ttl,
+                json.dumps(baseline)
+            )
+            
+        except redis.RedisError as e:
+            logger.error(f"Redis error updating baseline: {e}")
+    
+    def _check_geo_anomaly(
         self,
-        card1: str,
-        transaction: Dict[str, Any]
-    ) -> ATOResult:
+        transaction_data: Dict,
+        baseline: Dict
+    ) -> float:
         """
-        Analyze transaction and update baseline.
-
-        Args:
-            card1: Card identifier
-            transaction: Transaction dictionary
-
+        Check for geographic anomalies.
+        
+        Returns risk score [0, 1] based on:
+        - Address changes
+        - Distance from usual location
+        """
+        risk = 0.0
+        
+        addr1 = str(transaction_data.get('addr1', ''))
+        addr2 = str(transaction_data.get('addr2', ''))
+        
+        # Check if address is new
+        baseline_addrs = baseline.get('addresses', [])
+        
+        if baseline_addrs:
+            if addr1 and addr1 not in baseline_addrs:
+                risk += 0.5  # New address
+            
+            if addr2 and addr2 not in baseline_addrs:
+                risk += 0.3  # New secondary address
+        
+        # Check distance (if provided)
+        dist1 = transaction_data.get('dist1')
+        if dist1 and dist1 > self.geo_distance_threshold:
+            risk += 0.7  # Very far from usual location
+        elif dist1 and dist1 > 500:
+            risk += 0.4  # Moderately far
+        
+        return min(risk, 1.0)
+    
+    def _check_device_anomaly(
+        self,
+        transaction_data: Dict,
+        baseline: Dict
+    ) -> float:
+        """Check for device/browser anomalies."""
+        risk = 0.0
+        
+        device_info = str(transaction_data.get('device_info', ''))
+        device_type = str(transaction_data.get('device_type', ''))
+        
+        baseline_devices = baseline.get('devices', [])
+        
+        if baseline_devices and device_info:
+            if device_info not in baseline_devices:
+                risk += 0.6  # New device
+        
+        # Check for suspicious device patterns
+        if device_info:
+            device_lower = device_info.lower()
+            # Emulators, bots, unusual devices
+            if any(keyword in device_lower for keyword in [
+                'emulator', 'bot', 'crawler', 'scraper', 'unknown'
+            ]):
+                risk += 0.8
+        
+        return min(risk, 1.0)
+    
+    def _check_email_anomaly(
+        self,
+        transaction_data: Dict,
+        baseline: Dict
+    ) -> float:
+        """Check for email domain anomalies."""
+        risk = 0.0
+        
+        email_domain = str(transaction_data.get('email_domain', ''))
+        
+        if not email_domain:
+            return 0.0
+        
+        # Check if email domain is new
+        baseline_emails = baseline.get('email_domains', [])
+        if baseline_emails and email_domain not in baseline_emails:
+            risk += 0.5  # New email domain
+        
+        # Check if risky domain
+        if email_domain in self.risky_domains:
+            risk += 0.7  # Risky disposable email
+        
+        # Check for suspicious patterns
+        email_lower = email_domain.lower()
+        if any(keyword in email_lower for keyword in [
+            'temp', 'disposable', 'fake', 'trash', 'spam', '10minute'
+        ]):
+            risk += 0.6
+        
+        return min(risk, 1.0)
+    
+    def _check_amount_anomaly(
+        self,
+        transaction_data: Dict,
+        baseline: Dict
+    ) -> float:
+        """Check for unusual transaction amounts."""
+        risk = 0.0
+        
+        amount = transaction_data.get('amount')
+        if not amount:
+            return 0.0
+        
+        # Check if amount is very high
+        if amount >= self.high_amount_threshold:
+            risk += 0.7
+        elif amount >= 1000:
+            risk += 0.4
+        
+        # Check against baseline amounts
+        baseline_amounts = baseline.get('amounts', [])
+        if len(baseline_amounts) >= 5:
+            mean_amt = np.mean(baseline_amounts)
+            std_amt = np.std(baseline_amounts)
+            
+            # Z-score anomaly detection
+            if std_amt > 0:
+                z_score = abs((amount - mean_amt) / std_amt)
+                if z_score > 3.0:  # 3 sigma outlier
+                    risk += 0.6
+                elif z_score > 2.0:  # 2 sigma outlier
+                    risk += 0.3
+            
+            # Spike detection
+            if mean_amt > 0:
+                spike_ratio = amount / mean_amt
+                if spike_ratio >= 5.0:
+                    risk += 0.5
+                elif spike_ratio >= 3.0:
+                    risk += 0.3
+        
+        return min(risk, 1.0)
+    
+    def _check_card_type_anomaly(
+        self,
+        transaction_data: Dict,
+        baseline: Dict
+    ) -> float:
+        """Check for unusual card type usage."""
+        risk = 0.0
+        
+        card_type = str(transaction_data.get('card_type', ''))
+        
+        if not card_type:
+            return 0.0
+        
+        baseline_card_types = baseline.get('card_types', [])
+        
+        if baseline_card_types and card_type not in baseline_card_types:
+            risk += 0.4  # Different card type than usual
+        
+        return min(risk, 1.0)
+    
+    def _identify_risk_factors(
+        self,
+        geo_anomaly: float,
+        device_anomaly: float,
+        email_anomaly: float,
+        amount_anomaly: float,
+        card_anomaly: float,
+        transaction_data: Dict
+    ) -> List[str]:
+        """Identify human-readable ATO risk factors."""
+        factors = []
+        
+        if geo_anomaly > 0.5:
+            dist = transaction_data.get('dist1', 0)
+            if dist > 0:
+                factors.append(f"geo_anomaly_distance_{dist:.0f}km")
+            else:
+                factors.append("geo_anomaly_new_address")
+        
+        if device_anomaly > 0.5:
+            factors.append("device_anomaly_new_device")
+        
+        if email_anomaly > 0.5:
+            email = transaction_data.get('email_domain', '')
+            if email in self.risky_domains:
+                factors.append(f"email_risky_domain_{email}")
+            else:
+                factors.append("email_anomaly_new_domain")
+        
+        if amount_anomaly > 0.5:
+            amount = transaction_data.get('amount', 0)
+            factors.append(f"amount_anomaly_{amount:.0f}")
+        
+        if card_anomaly > 0.3:
+            factors.append("card_type_anomaly")
+        
+        return factors
+    
+    def get_baseline_stats(self, card_id: str) -> Dict:
+        """
+        Get current baseline statistics for a card.
+        
         Returns:
-            ATOResult
+            Dictionary with baseline behavior profile
         """
-        # First analyze (before updating baseline)
-        result = self.analyze_ato(card1, transaction)
-
-        # Then update baseline (for next transaction)
-        self.update_baseline(card1, transaction)
-
-        return result
+        baseline = self._get_baseline(card_id)
+        
+        if not baseline:
+            return {'card_id': card_id, 'has_baseline': False}
+        
+        # Calculate statistics
+        amounts = baseline.get('amounts', [])
+        stats = {
+            'card_id': card_id,
+            'has_baseline': True,
+            'n_addresses': len(set(baseline.get('addresses', []))),
+            'n_devices': len(set(baseline.get('devices', []))),
+            'n_email_domains': len(set(baseline.get('email_domains', []))),
+            'n_transactions': len(amounts),
+        }
+        
+        if amounts:
+            stats['mean_amount'] = float(np.mean(amounts))
+            stats['std_amount'] = float(np.std(amounts))
+            stats['min_amount'] = float(min(amounts))
+            stats['max_amount'] = float(max(amounts))
+        
+        return stats

@@ -13,7 +13,7 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
     from_json, col, udf, pandas_udf, PandasUDFType, struct, to_json
 )
-from pyspark.sql.types import StructType, StringType, DoubleType
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 
 from .config import Config
 from .schema import get_transaction_schema
@@ -21,8 +21,9 @@ from .model_loader import ModelLoader
 from .feature_pipeline_spark import create_feature_pipeline
 from .velocity_service import VelocityService
 from .ato_service import ATOService
-from .decision_engine import DecisionEngine
+from .decision_engine import HybridDecisionEngine
 from .logging_utils import setup_logger_from_config
+from .utils.redis_client import get_redis_client
 
 # Global instances (initialized once per executor)
 _model_loader = None
@@ -31,14 +32,18 @@ _velocity_service = None
 _ato_service = None
 _decision_engine = None
 _config = None
+_redis_client = None
 
 
 def get_or_create_services(config):
     """Initialize services once per executor (singleton pattern)."""
-    global _model_loader, _feature_pipeline, _velocity_service, _ato_service, _decision_engine, _config
+    global _model_loader, _feature_pipeline, _velocity_service, _ato_service, _decision_engine, _config, _redis_client
 
     if _config is None:
         _config = config
+
+    if _redis_client is None:
+        _redis_client = get_redis_client(config)
 
     if _model_loader is None:
         _model_loader = ModelLoader(config)
@@ -48,13 +53,15 @@ def get_or_create_services(config):
         _feature_pipeline = create_feature_pipeline(config)
 
     if _velocity_service is None:
-        _velocity_service = VelocityService(config)
+        _velocity_service = VelocityService(_redis_client, config)
 
     if _ato_service is None:
-        _ato_service = ATOService(config)
+        _ato_service = ATOService(_redis_client, config)
 
     if _decision_engine is None:
-        _decision_engine = DecisionEngine(config)
+        # ✅ FIX #1: Pass model metadata to decision engine for threshold
+        model_metadata = _model_loader.get_metadata()
+        _decision_engine = HybridDecisionEngine(config, model_metadata)
 
     return _model_loader, _feature_pipeline, _velocity_service, _ato_service, _decision_engine
 
@@ -95,15 +102,13 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
             amount = float(transaction.get('TransactionAmt', 0.0))
             timestamp = float(transaction.get('TransactionDT', 0.0))
 
-            velocity_result = velocity_service.analyze_velocity(
+            # Velocity service now does check + record in one call
+            velocity_result = velocity_service.check_velocity(
                 card1, uid, amount, timestamp
             )
 
-            # Record transaction for future velocity calculations
-            velocity_service.record_transaction(card1, uid, amount, timestamp)
-
             # 4. Analyze ATO
-            ato_result = ato_service.process_transaction(card1, transaction)
+            ato_result = ato_service.check_ato(card1, transaction)
 
             # 5. Make final decision
             decision_result = decision_engine.make_decision(
@@ -166,22 +171,30 @@ def main():
 
     # Create Spark session
     spark = SparkSession.builder \
-        .appName(config.spark.app_name) \
-        .config("spark.sql.shuffle.partitions", config.spark.shuffle_partitions) \
+        .appName(config.spark['app_name']) \
+        .config("spark.sql.shuffle.partitions", str(config.spark['shuffle_partition'])) \
+        .config("spark.jars.packages", config.spark['packages']) \
         .getOrCreate()
 
     logger.info(f"Spark session created: {spark.version}")
 
-    # Read from Kafka
-    logger.info(f"Reading from Kafka topic: {config.kafka.input_topic}")
+    # Read from Kafka (Confluent Cloud with SASL_SSL)
+    logger.info(f"Reading from Kafka topic: {config.kafka['topic']}")
+    logger.info(f"Kafka bootstrap servers: {config.kafka['bootstrap_servers']}")
 
     kafka_df = spark \
         .readStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", config.kafka.brokers) \
-        .option("subscribe", config.kafka.input_topic) \
+        .option("kafka.bootstrap.servers", config.kafka['bootstrap_servers']) \
+        .option("kafka.security.protocol", config.kafka['security_protocol']) \
+        .option("kafka.sasl.mechanism", "PLAIN") \
+        .option("kafka.sasl.jaas.config",
+                f'org.apache.kafka.common.security.plain.PlainLoginModule required '
+                f'username="{config.kafka["username"]}" '
+                f'password="{config.kafka["password"]}";') \
+        .option("subscribe", config.kafka['topic']) \
         .option("startingOffsets", "latest") \
-        .option("maxOffsetsPerTrigger", config.kafka.max_offsets_per_trigger) \
+        .option("maxOffsetsPerTrigger", "1000") \
         .load()
 
     # Parse JSON from Kafka value
@@ -228,34 +241,46 @@ def main():
     )
 
     # Write fraud predictions to Kafka
-    logger.info(f"Writing fraud predictions to: {config.kafka.fraud_output_topic}")
+    logger.info(f"Writing fraud predictions to: {config.kafka['output_topic']}")
 
     fraud_query = fraud_df \
         .select(to_json(struct("*")).alias("value")) \
         .writeStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", config.kafka.brokers) \
-        .option("topic", config.kafka.fraud_output_topic) \
-        .option("checkpointLocation", f"{config.spark.checkpoint_location}/fraud") \
-        .trigger(processingTime=config.spark.trigger_interval) \
+        .option("kafka.bootstrap.servers", config.kafka['bootstrap_servers']) \
+        .option("kafka.security.protocol", config.kafka['security_protocol']) \
+        .option("kafka.sasl.mechanism", "PLAIN") \
+        .option("kafka.sasl.jaas.config",
+                f'org.apache.kafka.common.security.plain.PlainLoginModule required '
+                f'username="{config.kafka["username"]}" '
+                f'password="{config.kafka["password"]}";') \
+        .option("topic", config.kafka['output_topic']) \
+        .option("checkpointLocation", f"{config.spark['checkpoint_location']}/fraud") \
+        .trigger(processingTime="10 seconds") \
         .start()
 
     # Write legit predictions to Kafka
-    logger.info(f"Writing legit predictions to: {config.kafka.legit_output_topic}")
+    logger.info(f"Writing legit predictions to: {config.kafka['legit_topic']}")
 
     legit_query = legit_df \
         .select(to_json(struct("*")).alias("value")) \
         .writeStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", config.kafka.brokers) \
-        .option("topic", config.kafka.legit_output_topic) \
-        .option("checkpointLocation", f"{config.spark.checkpoint_location}/legit") \
-        .trigger(processingTime=config.spark.trigger_interval) \
+        .option("kafka.bootstrap.servers", config.kafka['bootstrap_servers']) \
+        .option("kafka.security.protocol", config.kafka['security_protocol']) \
+        .option("kafka.sasl.mechanism", "PLAIN") \
+        .option("kafka.sasl.jaas.config",
+                f'org.apache.kafka.common.security.plain.PlainLoginModule required '
+                f'username="{config.kafka["username"]}" '
+                f'password="{config.kafka["password"]}";') \
+        .option("topic", config.kafka['legit_topic']) \
+        .option("checkpointLocation", f"{config.spark['checkpoint_location']}/legit") \
+        .trigger(processingTime="10 seconds") \
         .start()
 
     logger.info("Streaming queries started successfully")
-    logger.info(f"Checkpoint location: {config.spark.checkpoint_location}")
-    logger.info(f"Trigger interval: {config.spark.trigger_interval}")
+    logger.info(f"Checkpoint location: {config.spark['checkpoint_location']}")
+    logger.info(f"Trigger interval: 10 seconds")
 
     # Wait for termination
     spark.streams.awaitAnyTermination()

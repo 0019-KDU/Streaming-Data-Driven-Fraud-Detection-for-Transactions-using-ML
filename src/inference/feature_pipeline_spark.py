@@ -67,7 +67,9 @@ class FeaturePipelineSpark:
 
     def transform_batch(self, df: DataFrame) -> DataFrame:
         """
-        Apply feature engineering to a Spark DataFrame batch.
+        Apply feature engineering to a Spark DataFrame batch using distributed processing.
+        
+        ✅ FIX #4: Uses mapInPandas for parallel execution across partitions.
 
         Args:
             df: Input Spark DataFrame with raw transaction fields
@@ -78,57 +80,62 @@ class FeaturePipelineSpark:
         if self.feature_pipeline is None:
             raise ValueError("Feature pipeline not loaded. Call load() first.")
 
-        # Convert to Pandas, apply transform, convert back
-        # This is OK for micro-batches (typically < 10K rows)
-        @pandas_udf(StringType())
-        def apply_feature_transform(batch_df: pd.DataFrame) -> pd.Series:
+        logger.info("Transforming batch with distributed feature pipeline...")
+        
+        # Broadcast pipeline to all executors for efficiency
+        from pyspark.sql import SparkSession
+        spark = SparkSession.getActiveSession()
+        pipeline_broadcast = spark.sparkContext.broadcast(self.feature_pipeline)
+        
+        # Define output schema (TransactionID + 88 features)
+        from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+        
+        output_schema = StructType([
+            StructField("TransactionID", StringType(), True)
+        ] + [
+            StructField(fname, DoubleType(), True) 
+            for fname in self.feature_names
+        ])
+        
+        def transform_pandas_batch(iterator):
             """
-            Apply feature pipeline transformation using pandas UDF.
-
-            Returns engineered features as JSON string.
+            Transform each partition using pandas (runs in parallel on executors).
+            
+            ✅ FIX #4: This function runs on each executor, processing partitions in parallel.
             """
-            try:
-                # Apply the trained feature pipeline
-                transformed = self.feature_pipeline.transform(batch_df)
-
-                # Convert to JSON strings for transport
-                return pd.Series([transformed.to_json(orient='records')])
-
-            except Exception as e:
-                logger.error(f"Feature transformation failed: {e}")
-                # Return empty features on error
-                return pd.Series(['{}'])
-
-        # For now, we'll use a simpler approach:
-        # Convert entire micro-batch to pandas, transform, merge back
-
-        logger.info("Transforming batch with feature pipeline...")
-
-        # Collect to pandas (OK for streaming micro-batches)
-        pandas_df = df.toPandas()
-
-        # Apply feature pipeline transform
+            pipeline = pipeline_broadcast.value
+            
+            for pandas_df in iterator:
+                try:
+                    if pandas_df.empty:
+                        yield pd.DataFrame(columns=['TransactionID'] + pipeline.feature_names)
+                        continue
+                    
+                    # Apply feature pipeline transform
+                    features_df = pipeline.transform(pandas_df)
+                    
+                    # Add TransactionID back
+                    result = pd.concat([
+                        pandas_df[['TransactionID']].reset_index(drop=True),
+                        features_df.reset_index(drop=True)
+                    ], axis=1)
+                    
+                    yield result
+                    
+                except Exception as e:
+                    logger.error(f"Partition transform failed: {e}")
+                    # Return empty DataFrame with correct schema
+                    yield pd.DataFrame(columns=['TransactionID'] + pipeline.feature_names)
+        
         try:
-            features_df = self.feature_pipeline.transform(pandas_df)
-
-            # Create result DataFrame with original columns + features
-            result_pandas = pd.concat([
-                pandas_df[['TransactionID']],  # Keep ID
-                features_df  # Add engineered features
-            ], axis=1)
-
-            # Convert back to Spark DataFrame
-            from pyspark.sql import SparkSession
-            spark = SparkSession.getActiveSession()
-
-            result_spark = spark.createDataFrame(result_pandas)
-
-            logger.info(f"Transformed batch: {result_spark.count()} rows, {len(result_spark.columns)} columns")
-
-            return result_spark
-
+            # Apply distributed transform using mapInPandas
+            result_df = df.mapInPandas(transform_pandas_batch, schema=output_schema)
+            
+            logger.info("✅ Batch transformed using distributed processing")
+            return result_df
+            
         except Exception as e:
-            logger.error(f"Batch transformation failed: {e}")
+            logger.error(f"Distributed transformation failed: {e}")
             raise
 
     def get_feature_names(self):

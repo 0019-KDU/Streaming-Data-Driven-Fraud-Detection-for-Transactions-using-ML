@@ -54,19 +54,50 @@ class ModelLoader:
         try:
             model_bundle = joblib.load(model_path)
 
+            # Debug logging
+            logger.info(f"DEBUG: model_bundle loaded successfully")
+            logger.info(f"DEBUG: model_bundle type: {type(model_bundle)}")
+            logger.info(f"DEBUG: model_bundle is None: {model_bundle is None}")
+            logger.info(f"DEBUG: model_bundle is dict: {isinstance(model_bundle, dict)}")
+
+            if hasattr(model_bundle, '__dict__'):
+                logger.info(f"DEBUG: model_bundle attributes: {list(model_bundle.__dict__.keys())}")
+
             # Extract components from bundle
             if isinstance(model_bundle, dict):
-                self.model = model_bundle.get('model')
+                logger.info(f"DEBUG: model_bundle is a dict with keys: {list(model_bundle.keys())}")
+                self.model = model_bundle.get('model') or model_bundle.get('calibrated_model')
+                logger.info(f"DEBUG: Extracted model from dict, type: {type(self.model)}, is None: {self.model is None}")
                 self.feature_names = model_bundle.get('feature_names', [])
+                
+                # ✅ FIX #1: Load threshold from bundle, validate against config
+                bundle_threshold = model_bundle.get('threshold')
+                config_threshold = self.config.model.base_threshold
+                
+                if bundle_threshold is not None:
+                    if abs(bundle_threshold - config_threshold) > 0.01:
+                        logger.warning(
+                            f"⚠️ THRESHOLD MISMATCH: Bundle={bundle_threshold:.4f}, "
+                            f"Config={config_threshold:.4f}. Using bundle threshold."
+                        )
+                    threshold = bundle_threshold
+                    logger.info(f"✅ Loaded threshold from model bundle: {threshold:.4f}")
+                else:
+                    threshold = config_threshold
+                    logger.warning(f"⚠️ No threshold in bundle, using config: {threshold:.4f}")
+                
                 self.model_metadata = {
                     'model_type': model_bundle.get('model_type', 'unknown'),
-                    'threshold': model_bundle.get('threshold', self.config.model.base_threshold),
+                    'threshold': threshold,
                     'metrics': model_bundle.get('metrics', {}),
-                    'n_features': len(self.feature_names)
+                    'n_features': len(self.feature_names),
+                    'training_date': model_bundle.get('training_date', 'unknown')
                 }
             else:
                 # Fallback: assume it's just the model (raw pickle)
+                logger.info(f"DEBUG: model_bundle is NOT a dict, treating as raw model")
                 self.model = model_bundle
+                logger.info(f"DEBUG: Assigned model_bundle to self.model, type: {type(self.model)}, is None: {self.model is None}")
                 self.feature_names = []
                 self.model_metadata = {
                     'model_type': type(model_bundle).__name__,
@@ -75,6 +106,10 @@ class ModelLoader:
                     'n_features': 88  # Default for IEEE-CIS
                 }
                 logger.warning(f"Model bundle is not a dict, loaded raw model: {type(model_bundle)}")
+
+            # Final verification
+            logger.info(f"DEBUG: After assignment, self.model is None: {self.model is None}")
+            logger.info(f"DEBUG: After assignment, self.model type: {type(self.model)}")
 
             logger.info(
                 f"Model loaded successfully: {self.model_metadata.get('model_type', 'unknown')}, "
@@ -109,15 +144,9 @@ class ModelLoader:
         if self.model is None:
             raise ValueError("Model not loaded. Call load() first.")
 
-        # Ensure feature order matches training
+        # ✅ FIX #2: Strict feature validation
         if self.feature_names:
-            missing_features = set(self.feature_names) - set(features_df.columns)
-            if missing_features:
-                logger.warning(f"Missing features: {missing_features}")
-                # Add missing features with zeros
-                for feat in missing_features:
-                    features_df[feat] = 0.0
-
+            self._validate_features(features_df)
             # Reorder columns to match training
             features_df = features_df[self.feature_names]
 
@@ -160,6 +189,45 @@ class ModelLoader:
             List of feature names
         """
         return self.feature_names.copy()
+
+    def _validate_features(self, features_df: pd.DataFrame) -> None:
+        """
+        ✅ FIX #2: Validate feature parity with training.
+        
+        Raises:
+            ValueError: If features don't match training
+        """
+        if not self.feature_names:
+            logger.warning("⚠️ No feature names in model bundle, skipping validation")
+            return
+        
+        expected = set(self.feature_names)
+        actual = set(features_df.columns)
+        
+        missing = expected - actual
+        extra = actual - expected
+        
+        if missing:
+            raise ValueError(
+                f"❌ FEATURE VALIDATION FAILED: Missing {len(missing)} features from training: "
+                f"{list(missing)[:10]}{'...' if len(missing) > 10 else ''}"
+            )
+        
+        if extra:
+            logger.warning(
+                f"⚠️ Extra features not in training: {list(extra)[:10]}{'...' if len(extra) > 10 else ''}"
+            )
+        
+        # Verify feature count
+        expected_count = len(self.feature_names)
+        actual_count = len([c for c in features_df.columns if c in expected])
+        
+        if actual_count != expected_count:
+            raise ValueError(
+                f"❌ Feature count mismatch: Expected {expected_count}, got {actual_count}"
+            )
+        
+        logger.info(f"✅ Feature validation passed: {expected_count} features")
 
 
 def load_model_artifacts(config) -> Tuple[Any, Any]:
