@@ -104,13 +104,4 @@ spark:
   shuffle_partition: 200
   checkpoint_location: 'checkpoints'
 
-# Data Configuration for Training
-data:
-  ieee_cis:
-    train_transaction_path: /app/data/train_transaction.csv
-    train_identity_path: /app/data/train_identity.csv
 
-# Training Configuration
-training:
-  model_path: /app/models/fraud_detection_model.pkl
-  use_external_model: false

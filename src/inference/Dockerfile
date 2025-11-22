@@ -1,7 +1,13 @@
-# Clean Spark Inference Service Dockerfile
-FROM apache/spark:3.5.0
+# Simple Python Inference Service (No Kafka/Spark)
+FROM python:3.10-slim
 
 USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 RUN pip install --no-cache-dir \
@@ -11,7 +17,8 @@ RUN pip install --no-cache-dir \
     scikit-learn==1.2.2 \
     xgboost==1.7.5 \
     joblib==1.2.0 \
-    pyyaml==6.0
+    pyyaml==6.0 \
+    flask==2.3.0
 
 # Create app directory
 WORKDIR /app
@@ -19,6 +26,7 @@ WORKDIR /app
 # Copy inference code
 COPY __init__.py /app/src/inference/
 COPY config.py /app/src/inference/
+COPY config.yaml /app/src/inference/
 COPY schema.py /app/src/inference/
 COPY logging_utils.py /app/src/inference/
 COPY model_loader.py /app/src/inference/
@@ -33,8 +41,5 @@ COPY utils/ /app/src/inference/utils/
 ENV PYTHONPATH=/app:$PYTHONPATH
 ENV LOG_LEVEL=INFO
 
-# Default command
-CMD ["spark-submit", \
-    "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0", \
-    "--conf", "spark.sql.shuffle.partitions=50", \
-    "/app/src/inference/main_inference.py"]
+# Default command - run Python directly (no spark-submit)
+CMD ["python", "/app/src/inference/main_inference.py"]
