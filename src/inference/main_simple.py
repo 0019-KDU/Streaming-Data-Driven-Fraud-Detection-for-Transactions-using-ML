@@ -48,10 +48,10 @@ def initialize_services():
     model_loader.load()
     logger.info("✓ Model loaded successfully")
 
-    # Create feature pipeline
-    logger.info("Creating feature pipeline...")
-    feature_pipeline = create_feature_pipeline(config)
-    logger.info("✓ Feature pipeline created")
+    # Use feature pipeline from model_loader (already loaded)
+    logger.info("Using feature pipeline from model loader...")
+    feature_pipeline = model_loader  # ModelLoader has the feature_pipeline inside
+    logger.info("✓ Feature pipeline ready")
 
     # Initialize velocity service
     logger.info("Initializing velocity service...")
@@ -122,8 +122,8 @@ def predict():
 
         logger.info(f"Processing transaction: {transaction_id}")
 
-        # 1. Apply feature engineering
-        features_df = feature_pipeline.transform(
+        # 1. Apply feature engineering using model_loader's feature pipeline
+        features_df = model_loader.feature_pipeline.transform(
             pd.DataFrame([transaction])
         )
 
@@ -220,7 +220,7 @@ def predict_batch():
                 transaction_id = transaction.get('TransactionID', f'unknown_{len(results)}')
 
                 # Process each transaction
-                features_df = feature_pipeline.transform(
+                features_df = model_loader.feature_pipeline.transform(
                     pd.DataFrame([transaction])
                 )
 
