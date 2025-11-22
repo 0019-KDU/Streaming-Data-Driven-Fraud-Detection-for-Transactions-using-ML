@@ -176,30 +176,29 @@ def main():
 
     # Create Spark session
     spark = SparkSession.builder \
-        .appName(config.spark['app_name']) \
-        .config("spark.sql.shuffle.partitions", str(config.spark['shuffle_partition'])) \
-        .config("spark.jars.packages", config.spark['packages']) \
+        .appName(config.spark.app_name) \
+        .config("spark.sql.shuffle.partitions", str(config.spark.shuffle_partitions)) \
         .getOrCreate()
 
     logger.info(f"Spark session created: {spark.version}")
 
     # Read from Kafka (Confluent Cloud with SASL_SSL)
-    logger.info(f"Reading from Kafka topic: {config.kafka['topic']}")
-    logger.info(f"Kafka bootstrap servers: {config.kafka['bootstrap_servers']}")
+    logger.info(f"Reading from Kafka topic: {config.kafka.input_topic}")
+    logger.info(f"Kafka bootstrap servers: {os.getenv('KAFKA_BOOTSTRAP_SERVERS', config.kafka.brokers)}")
 
     kafka_df = spark \
         .readStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", config.kafka['bootstrap_servers']) \
-        .option("kafka.security.protocol", config.kafka['security_protocol']) \
+        .option("kafka.bootstrap.servers", os.getenv('KAFKA_BOOTSTRAP_SERVERS', config.kafka.brokers)) \
+        .option("kafka.security.protocol", os.getenv('KAFKA_SECURITY_PROTOCOL', 'SASL_SSL')) \
         .option("kafka.sasl.mechanism", "PLAIN") \
         .option("kafka.sasl.jaas.config",
                 f'org.apache.kafka.common.security.plain.PlainLoginModule required '
-                f'username="{config.kafka["username"]}" '
-                f'password="{config.kafka["password"]}";') \
-        .option("subscribe", config.kafka['topic']) \
+                f'username="{os.getenv("KAFKA_USERNAME")}" '
+                f'password="{os.getenv("KAFKA_PASSWORD")}";') \
+        .option("subscribe", os.getenv('KAFKA_INPUT_TOPIC', config.kafka.input_topic)) \
         .option("startingOffsets", "latest") \
-        .option("maxOffsetsPerTrigger", "1000") \
+        .option("maxOffsetsPerTrigger", str(config.kafka.max_offsets_per_trigger)) \
         .load()
 
     # Parse JSON from Kafka value
@@ -246,40 +245,40 @@ def main():
     )
 
     # Write fraud predictions to Kafka
-    logger.info(f"Writing fraud predictions to: {config.kafka['output_topic']}")
+    logger.info(f"Writing fraud predictions to: {os.getenv('KAFKA_FRAUD_TOPIC', config.kafka.fraud_output_topic)}")
 
     fraud_query = fraud_df \
         .select(to_json(struct("*")).alias("value")) \
         .writeStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", config.kafka['bootstrap_servers']) \
-        .option("kafka.security.protocol", config.kafka['security_protocol']) \
+        .option("kafka.bootstrap.servers", os.getenv('KAFKA_BOOTSTRAP_SERVERS', config.kafka.brokers)) \
+        .option("kafka.security.protocol", os.getenv('KAFKA_SECURITY_PROTOCOL', 'SASL_SSL')) \
         .option("kafka.sasl.mechanism", "PLAIN") \
         .option("kafka.sasl.jaas.config",
                 f'org.apache.kafka.common.security.plain.PlainLoginModule required '
-                f'username="{config.kafka["username"]}" '
-                f'password="{config.kafka["password"]}";') \
-        .option("topic", config.kafka['output_topic']) \
-        .option("checkpointLocation", f"{config.spark['checkpoint_location']}/fraud") \
+                f'username="{os.getenv("KAFKA_USERNAME")}" '
+                f'password="{os.getenv("KAFKA_PASSWORD")}";') \
+        .option("topic", os.getenv('KAFKA_FRAUD_TOPIC', config.kafka.fraud_output_topic)) \
+        .option("checkpointLocation", f"{os.getenv('SPARK_CHECKPOINT_LOCATION', config.spark.checkpoint_location)}/fraud") \
         .trigger(processingTime="10 seconds") \
         .start()
 
     # Write legit predictions to Kafka
-    logger.info(f"Writing legit predictions to: {config.kafka['legit_topic']}")
+    logger.info(f"Writing legit predictions to: {os.getenv('KAFKA_LEGIT_TOPIC', config.kafka.legit_output_topic)}")
 
     legit_query = legit_df \
         .select(to_json(struct("*")).alias("value")) \
         .writeStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", config.kafka['bootstrap_servers']) \
-        .option("kafka.security.protocol", config.kafka['security_protocol']) \
+        .option("kafka.bootstrap.servers", os.getenv('KAFKA_BOOTSTRAP_SERVERS', config.kafka.brokers)) \
+        .option("kafka.security.protocol", os.getenv('KAFKA_SECURITY_PROTOCOL', 'SASL_SSL')) \
         .option("kafka.sasl.mechanism", "PLAIN") \
         .option("kafka.sasl.jaas.config",
                 f'org.apache.kafka.common.security.plain.PlainLoginModule required '
-                f'username="{config.kafka["username"]}" '
-                f'password="{config.kafka["password"]}";') \
-        .option("topic", config.kafka['legit_topic']) \
-        .option("checkpointLocation", f"{config.spark['checkpoint_location']}/legit") \
+                f'username="{os.getenv("KAFKA_USERNAME")}" '
+                f'password="{os.getenv("KAFKA_PASSWORD")}";') \
+        .option("topic", os.getenv('KAFKA_LEGIT_TOPIC', config.kafka.legit_output_topic)) \
+        .option("checkpointLocation", f"{os.getenv('SPARK_CHECKPOINT_LOCATION', config.spark.checkpoint_location)}/legit") \
         .trigger(processingTime="10 seconds") \
         .start()
 
