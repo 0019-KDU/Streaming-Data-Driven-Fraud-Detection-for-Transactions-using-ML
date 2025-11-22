@@ -11,7 +11,7 @@ import pandas as pd
 
 from src.inference.config import Config
 from src.inference.model_loader import ModelLoader
-from src.inference.feature_pipeline_spark import create_feature_pipeline
+from src.inference.feature_pipeline_simple import create_feature_pipeline
 from src.inference.velocity_service import VelocityService
 from src.inference.ato_service import ATOService
 from src.inference.decision_engine import DecisionEngine
@@ -123,7 +123,7 @@ def predict():
         logger.info(f"Processing transaction: {transaction_id}")
 
         # 1. Apply feature engineering
-        features_df = feature_pipeline.feature_pipeline.transform(
+        features_df = feature_pipeline.transform(
             pd.DataFrame([transaction])
         )
 
@@ -220,7 +220,7 @@ def predict_batch():
                 transaction_id = transaction.get('TransactionID', f'unknown_{len(results)}')
 
                 # Process each transaction
-                features_df = feature_pipeline.feature_pipeline.transform(
+                features_df = feature_pipeline.transform(
                     pd.DataFrame([transaction])
                 )
 

@@ -31,7 +31,7 @@ COPY config.yaml /app/src/inference/
 COPY schema.py /app/src/inference/
 COPY logging_utils.py /app/src/inference/
 COPY model_loader.py /app/src/inference/
-COPY feature_pipeline_spark.py /app/src/inference/
+COPY feature_pipeline_simple.py /app/src/inference/
 COPY velocity_service.py /app/src/inference/
 COPY ato_service.py /app/src/inference/
 COPY decision_engine.py /app/src/inference/
