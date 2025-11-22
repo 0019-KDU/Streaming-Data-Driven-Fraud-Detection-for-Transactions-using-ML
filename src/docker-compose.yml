@@ -344,7 +344,7 @@ services:
     networks:
       - fraud-detection
 
-  # Inference Service (Python-based, No Kafka/Spark)
+  # Inference Service (Python REST API, No Kafka/Spark)
   inference:
     build: ./inference
     container_name: fraud-inference
@@ -353,6 +353,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    ports:
+      - "5000:5000"  # REST API port
     environment:
       # Redis Configuration
       - REDIS_HOST=redis
@@ -371,6 +373,12 @@ services:
       - ./.env:/app/.env:ro
       - ./inference:/app/src/inference
       - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - fraud-detection
 

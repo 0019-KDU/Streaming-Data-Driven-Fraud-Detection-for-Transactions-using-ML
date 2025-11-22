@@ -7,6 +7,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -34,12 +35,12 @@ COPY feature_pipeline_spark.py /app/src/inference/
 COPY velocity_service.py /app/src/inference/
 COPY ato_service.py /app/src/inference/
 COPY decision_engine.py /app/src/inference/
-COPY main_inference.py /app/src/inference/
+COPY main_simple.py /app/src/inference/
 COPY utils/ /app/src/inference/utils/
 
 # Set Python path
 ENV PYTHONPATH=/app:$PYTHONPATH
 ENV LOG_LEVEL=INFO
 
-# Default command - run Python directly (no spark-submit)
-CMD ["python", "/app/src/inference/main_inference.py"]
+# Default command - run Flask API
+CMD ["python", "/app/src/inference/main_simple.py"]
