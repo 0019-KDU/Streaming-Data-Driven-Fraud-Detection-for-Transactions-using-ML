@@ -355,7 +355,7 @@ services:
   inference-spark:
     build:
       context: ./inference
-      dockerfile: Dockerfile.spark
+      dockerfile: Dockerfile
     container_name: fraud-inference-spark
     env_file: .env
     restart: unless-stopped
