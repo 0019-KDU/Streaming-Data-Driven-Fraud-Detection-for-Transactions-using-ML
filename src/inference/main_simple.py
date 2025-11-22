@@ -289,10 +289,7 @@ if __name__ == '__main__':
     # Initialize services before Flask starts
     initialize_services()
 
-    # Access global variables
-    global model_loader, logger
-
-    # Verify services are loaded
+    # Verify services are loaded (accessing globals already set by initialize_services)
     print(f"Checking model_loader: {model_loader}")
     print(f"Checking model_loader.model: {model_loader.model if model_loader else 'None'}")
 
