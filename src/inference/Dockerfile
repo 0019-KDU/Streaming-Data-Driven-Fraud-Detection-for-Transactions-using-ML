@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir \
     xgboost==1.7.5 \
     joblib==1.2.0 \
     pyyaml==6.0 \
-    flask==2.3.0
+    flask==2.3.0 \
+    dill==0.3.6
 
 # Create app directory
 WORKDIR /app
