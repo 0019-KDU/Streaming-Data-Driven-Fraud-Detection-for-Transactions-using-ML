@@ -26,10 +26,14 @@ print(f"[2] Loaded {len(agg_maps)} maps")
 
 # Load IEEE-CIS data to calculate real fraud rates
 print(f"\n[3] Loading IEEE-CIS dataset...")
-txn = pd.read_csv('ieee-fraud-detection/train_transaction.csv')
-id_df = pd.read_csv('ieee-fraud-detection/train_identity.csv')
+
+txn = pd.read_csv('src/data/ieee_cis/train_transaction.csv')
+id_df = pd.read_csv('src/data/ieee_cis/train_identity.csv')
+
 df = txn.merge(id_df, on='TransactionID', how='left')
+
 print(f"   Loaded {len(df):,} transactions")
+
 
 # Calculate fraud rates from REAL data
 print(f"\n[4] Calculating fraud rates from real data...")
