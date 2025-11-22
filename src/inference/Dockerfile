@@ -64,22 +64,22 @@ RUN pip install --no-cache-dir \
     pyarrow==14.0.1
 
 # Copy inference code
-COPY __init__.py /app/src/inference/
-COPY config.py /app/src/inference/
-COPY config.yaml /app/src/inference/
-COPY schema.py /app/src/inference/
-COPY logging_utils.py /app/src/inference/
-COPY model_loader.py /app/src/inference/
-COPY feature_pipeline_spark.py /app/src/inference/
-COPY velocity_service.py /app/src/inference/
-COPY ato_service.py /app/src/inference/
-COPY decision_engine.py /app/src/inference/
-COPY main_inference.py /app/src/inference/
-COPY utils/ /app/src/inference/utils/
+COPY inference/__init__.py /app/src/inference/
+COPY inference/config.py /app/src/inference/
+COPY inference/config.yaml /app/src/inference/
+COPY inference/schema.py /app/src/inference/
+COPY inference/logging_utils.py /app/src/inference/
+COPY inference/model_loader.py /app/src/inference/
+COPY inference/feature_pipeline_spark.py /app/src/inference/
+COPY inference/velocity_service.py /app/src/inference/
+COPY inference/ato_service.py /app/src/inference/
+COPY inference/decision_engine.py /app/src/inference/
+COPY inference/main_inference.py /app/src/inference/
+COPY inference/utils/ /app/src/inference/utils/
 
 # Copy training module for pickle deserialization
-COPY ../dags/__init__.py /app/src/dags/
-COPY ../dags/ieee_cis_training.py /app/src/dags/
+COPY dags/__init__.py /app/src/dags/
+COPY dags/ieee_cis_training.py /app/src/dags/
 
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
