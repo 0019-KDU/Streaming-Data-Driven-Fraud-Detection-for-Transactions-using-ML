@@ -15,10 +15,9 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 
-# Import training module from inference folder
+# Import training module
 import sys
 sys.path.insert(0, '/opt/airflow/dags')
-sys.path.insert(0, '/app/inference')  # Add inference folder to path
 
 from ieee_cis_training import train_ieee_cis_model
 
