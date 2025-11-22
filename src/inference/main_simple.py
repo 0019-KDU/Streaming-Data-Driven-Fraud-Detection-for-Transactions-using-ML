@@ -48,9 +48,9 @@ def initialize_services():
     model_loader.load()
     logger.info("✓ Model loaded successfully")
 
-    # Use feature pipeline from model_loader (already loaded)
-    logger.info("Using feature pipeline from model loader...")
-    feature_pipeline = model_loader  # ModelLoader has the feature_pipeline inside
+    # Feature pipeline is inside model_loader
+    logger.info("Feature pipeline ready (loaded with model)")
+    feature_pipeline = model_loader  # Reference for compatibility
     logger.info("✓ Feature pipeline ready")
 
     # Initialize velocity service
