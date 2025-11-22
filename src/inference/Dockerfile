@@ -59,7 +59,8 @@ RUN pip install --no-cache-dir \
     xgboost==2.0.3 \
     joblib==1.2.0 \
     pyyaml==6.0 \
-    confluent-kafka==2.3.0
+    confluent-kafka==2.3.0 \
+    pyarrow==14.0.1
 
 # Copy inference code
 COPY __init__.py /app/src/inference/
