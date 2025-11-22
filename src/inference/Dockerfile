@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies (matching training versions)
 RUN pip install --no-cache-dir \
     redis==4.5.4 \
     pandas==1.5.3 \
     numpy==1.24.3 \
-    scikit-learn==1.2.2 \
-    xgboost==1.7.5 \
+    scikit-learn==1.7.2 \
+    xgboost==2.0.3 \
     joblib==1.2.0 \
     pyyaml==6.0 \
     flask==2.3.0 \
@@ -37,6 +37,7 @@ COPY velocity_service.py /app/src/inference/
 COPY ato_service.py /app/src/inference/
 COPY decision_engine.py /app/src/inference/
 COPY main_simple.py /app/src/inference/
+COPY ieee_cis_training.py /app/
 COPY utils/ /app/src/inference/utils/
 
 # Set Python path
