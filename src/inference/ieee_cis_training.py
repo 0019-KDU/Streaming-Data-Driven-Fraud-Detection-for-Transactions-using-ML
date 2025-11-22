@@ -6,7 +6,19 @@ with references to the ieee_cis_training module. It provides empty stubs
 for any classes/functions that might be referenced in the pickled model.
 """
 
-# This is intentionally empty - it just needs to exist so pickle can import it
-# The actual model functionality is self-contained in the pickle file
 
-pass
+class AdaptiveThresholdSystem:
+    """
+    Dummy class to satisfy pickle unpickling.
+
+    The actual model doesn't need this class at inference time - it's only
+    referenced during pickle serialization. This stub allows the pickle to load.
+    """
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+    def __getstate__(self):
+        return self.__dict__
