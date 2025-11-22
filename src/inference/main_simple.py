@@ -289,17 +289,28 @@ if __name__ == '__main__':
     # Initialize services before Flask starts
     initialize_services()
 
+    # Access global variables
+    global model_loader, logger
+
     # Verify services are loaded
-    if model_loader is None or model_loader.model is None:
-        print("ERROR: Model failed to load!")
+    print(f"Checking model_loader: {model_loader}")
+    print(f"Checking model_loader.model: {model_loader.model if model_loader else 'None'}")
+
+    if model_loader is None:
+        print("ERROR: model_loader is None!")
+        exit(1)
+
+    if model_loader.model is None:
+        print("ERROR: model_loader.model is None!")
         exit(1)
 
     print(f"✓ Services initialized successfully")
-    print(f"✓ Model: {model_loader.model is not None}")
-    print(f"✓ Feature Pipeline: {model_loader.feature_pipeline is not None}")
+    print(f"✓ Model: {type(model_loader.model)}")
+    print(f"✓ Feature Pipeline: {type(model_loader.feature_pipeline)}")
 
     # Run Flask app
     port = 5000
     if logger:
         logger.info(f"Starting Flask server on port {port}")
+    print(f"Starting Flask on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
