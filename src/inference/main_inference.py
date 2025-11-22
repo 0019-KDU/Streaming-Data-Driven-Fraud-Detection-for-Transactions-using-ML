@@ -283,7 +283,7 @@ def main():
         .start()
 
     logger.info("Streaming queries started successfully")
-    logger.info(f"Checkpoint location: {config.spark['checkpoint_location']}")
+    logger.info(f"Checkpoint location: {os.getenv('SPARK_CHECKPOINT_LOCATION', config.spark.checkpoint_location)}")
     logger.info(f"Trigger interval: 10 seconds")
 
     # Wait for termination
