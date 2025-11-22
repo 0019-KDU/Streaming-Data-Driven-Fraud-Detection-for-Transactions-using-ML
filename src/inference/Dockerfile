@@ -19,7 +19,6 @@ WORKDIR /app
 # Copy inference code
 COPY __init__.py /app/src/inference/
 COPY config.py /app/src/inference/
-COPY config.yaml /app/src/inference/
 COPY schema.py /app/src/inference/
 COPY logging_utils.py /app/src/inference/
 COPY model_loader.py /app/src/inference/
