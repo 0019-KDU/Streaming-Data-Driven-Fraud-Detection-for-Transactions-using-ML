@@ -58,6 +58,7 @@ RUN pip install --no-cache-dir \
     scikit-learn==1.2.2 \
     xgboost==2.0.3 \
     joblib==1.2.0 \
+    dill==0.3.6 \
     pyyaml==6.0 \
     confluent-kafka==2.3.0 \
     pyarrow==14.0.1
