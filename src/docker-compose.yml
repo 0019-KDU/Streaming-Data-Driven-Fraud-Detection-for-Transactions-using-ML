@@ -344,25 +344,33 @@ services:
     networks:
       - fraud-detection
 
-  # Enhanced Inference Pipeline
+  # Inference Service (Python-based, No Kafka/Spark)
   inference:
     build: ./inference
     container_name: fraud-inference
     env_file: .env
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - redis
-      - postgres
-      - mlflow-server
+      redis:
+        condition: service_healthy
     environment:
+      # Redis Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Model Configuration
+      - MODEL_BUNDLE_PATH=/app/models/fraud_detection_model.pkl
+      - FEATURE_PIPELINE_PATH=/app/models/feature_pipeline.pkl
+      # Logging
+      - LOG_LEVEL=INFO
+      # MLflow (optional - for model versioning)
       - MLFLOW_TRACKING_URI=http://mlflow-server:5500
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
     volumes:
-      - ./models:/app/models
-      - ./config.yaml:/app/config.yaml
-      - ./.env:/app/.env
-      - ./inference:/app/src/inference # Mount source code for development
-      - ./data:/app/data # Mount for IEEE-CIS data
+      - ./models:/app/models:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./inference:/app/src/inference
+      - ./logs:/app/logs
     networks:
       - fraud-detection
 
