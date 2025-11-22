@@ -77,6 +77,10 @@ COPY decision_engine.py /app/src/inference/
 COPY main_inference.py /app/src/inference/
 COPY utils/ /app/src/inference/utils/
 
+# Copy training module for pickle deserialization
+COPY ../dags/__init__.py /app/src/dags/
+COPY ../dags/ieee_cis_training.py /app/src/dags/
+
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
 
