@@ -15,15 +15,20 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 
-from .config import Config
-from .schema import get_transaction_schema
-from .model_loader import ModelLoader
-from .feature_pipeline_spark import create_feature_pipeline
-from .velocity_service import VelocityService
-from .ato_service import ATOService
-from .decision_engine import HybridDecisionEngine
-from .logging_utils import setup_logger_from_config
-from .utils.redis_client import get_redis_client
+# Absolute imports for spark-submit execution
+import sys
+import os
+sys.path.insert(0, '/app')
+
+from src.inference.config import Config
+from src.inference.schema import get_transaction_schema
+from src.inference.model_loader import ModelLoader
+from src.inference.feature_pipeline_spark import create_feature_pipeline
+from src.inference.velocity_service import VelocityService
+from src.inference.ato_service import ATOService
+from src.inference.decision_engine import HybridDecisionEngine
+from src.inference.logging_utils import setup_logger_from_config
+from src.inference.utils.redis_client import get_redis_client
 
 # Global instances (initialized once per executor)
 _model_loader = None
