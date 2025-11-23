@@ -228,8 +228,8 @@ def format_transaction_row(txn: Dict[str, Any]) -> Dict[str, Any]:
         'TX ID': txn.get('transaction_id', 'N/A')[:12],
         'Decision': txn.get('decision', 'N/A'),
         'Risk': txn.get('risk_level', 'N/A'),
-        'Prob': f"{txn.get('probability', 0.0):.3f}",
-        'Amount': f"${txn.get('amount', 0.0):.2f}",
+        'Prob': f"{txn.get('fraud_probability', txn.get('probability', 0.0)):.3f}",
+        'Amount': f"${float(txn.get('TransactionAmt', txn.get('amount', 0.0))):.2f}",
         'Card': f"{card} ({card_type})",
         'Email': email_domain[:20] if email_domain else 'N/A',
         'Product': product,
@@ -269,7 +269,7 @@ def update_model_stats(transactions: List[Dict[str, Any]]):
             st.session_state.model_stats['threshold_adjustments'] += 1
     
     # Update average confidence
-    probabilities = [t.get('probability', 0.0) for t in transactions if t.get('type') == 'FRAUD']
+    probabilities = [t.get('fraud_probability', t.get('probability', 0.0)) for t in transactions if t.get('type') == 'FRAUD']
     if probabilities:
         total_prob = sum(probabilities)
         count = len(probabilities)
@@ -455,7 +455,7 @@ def main():
 
     with col4:
         recent_amounts = [
-            t.get('amount', 0.0)
+            float(t.get('TransactionAmt', t.get('amount', 0.0)))
             for t in st.session_state.transactions
         ][-10:]
         avg_amount = sum(recent_amounts) / len(recent_amounts) if recent_amounts else 0
