@@ -130,7 +130,7 @@ for idx, row in fraud_full.head(50).iterrows():
             'P_emaildomain': str(row['P_emaildomain']) if pd.notna(row['P_emaildomain']) else None
         })
         
-        if fraud_prob > 0.10:  # Over 10%
+        if fraud_prob > 0.03:  # Over 3% (above threshold)
             print(f"✅ Transaction {int(row['TransactionID'])}: {fraud_prob*100:.1f}% fraud | ${row['TransactionAmt']} | {row['card4']} {row['card1']} | {row['P_emaildomain']}")
     except Exception as e:
         continue
@@ -139,11 +139,23 @@ for idx, row in fraud_full.head(50).iterrows():
 high_fraud_results.sort(key=lambda x: x['fraud_probability'], reverse=True)
 
 print(f"\n{'='*80}")
-print("TOP 10 HIGHEST FRAUD SCORES:")
+print("TOP 20 HIGHEST FRAUD SCORES:")
 print(f"{'='*80}")
-for i, result in enumerate(high_fraud_results[:10], 1):
+for i, result in enumerate(high_fraud_results[:20], 1):
     print(f"{i}. Transaction {result['TransactionID']}: {result['fraud_probability']*100:.2f}% | "
           f"${result['TransactionAmt']:.0f} | {result['card4']} {result['card1']} | {result['P_emaildomain']}")
+
+# Show statistics
+if high_fraud_results:
+    probs = [r['fraud_probability'] for r in high_fraud_results]
+    print(f"\n{'='*80}")
+    print("FRAUD PROBABILITY STATISTICS:")
+    print(f"{'='*80}")
+    print(f"Max:    {max(probs)*100:.2f}%")
+    print(f"Mean:   {np.mean(probs)*100:.2f}%")
+    print(f"Median: {np.median(probs)*100:.2f}%")
+    print(f"Min:    {min(probs)*100:.2f}%")
+    print(f"Above threshold (5.64%): {sum(1 for p in probs if p > 0.0564)} transactions")
 
 # Save the highest scoring one
 if high_fraud_results:
