@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 import sys
 import json
+import joblib
 
 print("Loading model and pipeline...")
 # Load model - try different possible paths and names
@@ -21,12 +22,29 @@ for model_path in model_paths:
     if model is not None:
         break
     try:
+        # Try joblib (recommended for sklearn/xgboost models)
+        try:
+            model_bundle = joblib.load(model_path)
+            if isinstance(model_bundle, dict):
+                model = model_bundle.get('model') or model_bundle.get('calibrated_model')
+                feature_names = model_bundle.get('feature_names', [])
+                threshold = model_bundle.get('threshold', 0.05639991909265518)
+            else:
+                model = model_bundle
+                feature_names = []
+                threshold = 0.05639991909265518
+            print(f"✅ Model loaded with joblib from: {model_path}")
+            break
+        except (Exception,):
+            pass
+        
         # Try regular pickle
         try:
             with open(model_path, 'rb') as f:
                 model_data = pickle.load(f)
                 model = model_data['model']
                 feature_names = model_data['feature_names']
+                threshold = model_data.get('threshold', 0.05639991909265518)
                 print(f"✅ Model loaded with pickle from: {model_path}")
                 break
         except (pickle.UnpicklingError, KeyError):
@@ -38,18 +56,8 @@ for model_path in model_paths:
                 model_data = dill.load(f)
                 model = model_data['model']
                 feature_names = model_data['feature_names']
+                threshold = model_data.get('threshold', 0.05639991909265518)
                 print(f"✅ Model loaded with dill from: {model_path}")
-                break
-        except (Exception,):
-            pass
-        
-        # Try gzipped pickle
-        try:
-            with gzip.open(model_path, 'rb') as f:
-                model_data = pickle.load(f)
-                model = model_data['model']
-                feature_names = model_data['feature_names']
-                print(f"✅ Model loaded with gzip+pickle from: {model_path}")
                 break
         except (Exception,):
             pass
@@ -58,20 +66,10 @@ for model_path in model_paths:
         continue
 
 if model is None:
-    print("❌ Could not load model. Trying to load directly from inference container...")
-    # Try loading from the inference service's loaded model
-    try:
-        import sys
-        sys.path.insert(0, '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/inference')
-        from model_loader import load_model
-        model_data = load_model('/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/fraud_detection_model.pkl')
-        model = model_data['model']
-        feature_names = model_data['feature_names']
-        print("✅ Model loaded using model_loader.py")
-    except Exception as e:
-        print(f"❌ Failed to load model: {e}")
-        print("   Run: ls -la /home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/")
-        sys.exit(1)
+    print("❌ Could not load model file")
+    print("   Run: ls -la /home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/")
+    print("   Check file format: file /home/.../src/models/fraud_detection_model.pkl")
+    sys.exit(1)
 
 print(f"Model loaded with {len(feature_names)} features")
 print(f"Threshold: {model_data.get('threshold', 0.05639991909265518)}")
