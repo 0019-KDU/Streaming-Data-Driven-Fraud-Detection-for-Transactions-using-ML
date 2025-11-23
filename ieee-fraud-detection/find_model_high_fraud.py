@@ -29,6 +29,9 @@ model_paths = [
 ]
 
 model = None
+model_bundle = None
+threshold = 0.05639991909265518
+
 for model_path in model_paths:
     if model is not None:
         break
@@ -83,7 +86,7 @@ if model is None:
     sys.exit(1)
 
 print(f"Model loaded with {len(feature_names)} features")
-print(f"Threshold: {model_data.get('threshold', 0.05639991909265518)}")
+print(f"Threshold: {threshold}")
 
 # Load feature pipeline
 sys.path.append('/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/inference')
