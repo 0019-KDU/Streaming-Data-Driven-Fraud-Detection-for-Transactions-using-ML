@@ -80,16 +80,8 @@ COPY inference/schema.py /app/src/inference/
 COPY inference/logging_utils.py /app/src/inference/
 COPY inference/model_loader.py /app/src/inference/
 COPY inference/feature_pipeline_spark.py /app/src/inference/
-COPY inference/velocity_service.py /app/src/inference/
-COPY inference/ato_service.py /app/src/inference/
-COPY inference/decision_engine.py /app/src/inference/
 COPY inference/main_inference.py /app/src/inference/
 COPY inference/utils/ /app/src/inference/utils/
-
-# Copy training modules for pickle deserialization (ieee_cis_training imports feature_pipeline)
-COPY dags/__init__.py /app/src/dags/
-COPY dags/ieee_cis_training.py /app/src/dags/
-COPY dags/feature_pipeline.py /app/src/dags/
 
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
