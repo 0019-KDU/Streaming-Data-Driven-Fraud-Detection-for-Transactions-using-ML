@@ -127,7 +127,7 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 ato_factors=ato_result.factors
             )
 
-            # 6. Build output record
+            # 6. Build output record with original transaction data
             output = {
                 'transaction_id': transaction_id,
                 'fraud_probability': fraud_prob,
@@ -137,7 +137,14 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 'ato_risk': ato_result.ato_risk,
                 'velocity_risk': velocity_result.velocity_risk,
                 'amount_risk': velocity_result.amount_risk,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                # Include original transaction fields for dashboard
+                'TransactionAmt': float(transaction.get('TransactionAmt', 0.0)) if pd.notna(transaction.get('TransactionAmt')) else 0.0,
+                'ProductCD': str(transaction.get('ProductCD', 'N/A')) if pd.notna(transaction.get('ProductCD')) else 'N/A',
+                'card1': str(transaction.get('card1', 'N/A')) if pd.notna(transaction.get('card1')) else 'N/A',
+                'card4': str(transaction.get('card4', 'N/A')) if pd.notna(transaction.get('card4')) else 'N/A',
+                'card6': str(transaction.get('card6', 'N/A')) if pd.notna(transaction.get('card6')) else 'N/A',
+                'P_emaildomain': str(transaction.get('P_emaildomain', 'N/A')) if pd.notna(transaction.get('P_emaildomain')) else 'N/A',
             }
 
             results.append(output)
@@ -147,7 +154,7 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
             logger = setup_logger_from_config(__name__, config)
             logger.error(f"Failed to process transaction {transaction_id}: {e}")
 
-            # Return a default safe output
+            # Return a default safe output with original transaction data
             results.append({
                 'transaction_id': transaction_id,
                 'fraud_probability': 0.5,
@@ -157,7 +164,14 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 'ato_risk': 0.0,
                 'velocity_risk': 0.0,
                 'amount_risk': 0.0,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                # Include original transaction fields even in error case
+                'TransactionAmt': float(transaction.get('TransactionAmt', 0.0)) if pd.notna(transaction.get('TransactionAmt')) else 0.0,
+                'ProductCD': str(transaction.get('ProductCD', 'N/A')) if pd.notna(transaction.get('ProductCD')) else 'N/A',
+                'card1': str(transaction.get('card1', 'N/A')) if pd.notna(transaction.get('card1')) else 'N/A',
+                'card4': str(transaction.get('card4', 'N/A')) if pd.notna(transaction.get('card4')) else 'N/A',
+                'card6': str(transaction.get('card6', 'N/A')) if pd.notna(transaction.get('card6')) else 'N/A',
+                'P_emaildomain': str(transaction.get('P_emaildomain', 'N/A')) if pd.notna(transaction.get('P_emaildomain')) else 'N/A',
             })
 
     return pd.DataFrame(results)
