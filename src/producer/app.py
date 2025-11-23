@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from confluent_kafka import Producer, Consumer
 from dotenv import load_dotenv
+import math
 
 # Load environment variables
 load_dotenv(dotenv_path="../.env")
@@ -63,6 +64,13 @@ class TransactionSubmitRequest(BaseModel):
     # Allow extra fields for forward compatibility
     class Config:
         extra = "allow"
+
+    @validator('*', pre=True)
+    def convert_nan_to_none(cls, v):
+        """Convert NaN values to None for JSON serialization"""
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        return v
 
     @validator('TransactionID', always=True)
     def set_transaction_id(cls, v):
@@ -209,6 +217,12 @@ async def submit_transaction(request: TransactionSubmitRequest):
         # Convert request to dict
         transaction = request.dict()
         
+        # Clean NaN/Infinity values for JSON serialization
+        transaction = {
+            k: (None if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v)
+            for k, v in transaction.items()
+        }
+        
         # Ensure TransactionID is a string (handles int input)
         if transaction.get("TransactionID") is not None:
             transaction["TransactionID"] = str(transaction["TransactionID"])
@@ -270,6 +284,12 @@ async def score_transaction_sync(request: TransactionSubmitRequest):
 
         # Convert request to dict
         transaction = request.dict()
+        
+        # Clean NaN/Infinity values for JSON serialization
+        transaction = {
+            k: (None if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v)
+            for k, v in transaction.items()
+        }
         
         # Ensure TransactionID is a string (handles int input)
         if transaction.get("TransactionID") is not None:
