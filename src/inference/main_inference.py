@@ -91,18 +91,27 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
     for idx, row in batch_df.iterrows():
         transaction = row.to_dict()
         transaction_id = transaction.get('TransactionID', f'unknown_{idx}')
+        
+        # 📊 Performance tracking
+        import time
+        tx_start = time.time()
 
         try:
             # 1. Apply feature engineering
+            feat_start = time.time()
             # ✅ FIX: Use .feature_pipeline (the loaded pickle) directly
             features_df = feature_pipeline.feature_pipeline.transform(
                 pd.DataFrame([transaction])
             )
+            feat_time = time.time() - feat_start
 
             # 2. Get ML model prediction
+            pred_start = time.time()
             fraud_prob = float(model_loader.predict(features_df)[0])
+            pred_time = time.time() - pred_start
 
             # 3. Analyze velocity
+            vel_start = time.time()
             card1 = str(transaction.get('card1', 'unknown'))
             uid = f"{card1}_{transaction.get('addr1', 'na')}_{transaction.get('P_emaildomain', 'na')}"
             amount = float(transaction.get('TransactionAmt', 0.0))
@@ -112,11 +121,15 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
             velocity_result = velocity_service.check_velocity(
                 card1, uid, amount, timestamp
             )
+            vel_time = time.time() - vel_start
 
             # 4. Analyze ATO
+            ato_start = time.time()
             ato_result = ato_service.check_ato(card1, transaction)
+            ato_time = time.time() - ato_start
 
             # 5. Make final decision
+            dec_start = time.time()
             decision_result = decision_engine.make_decision(
                 fraud_probability=fraud_prob,
                 velocity_risk=velocity_result.velocity_risk,
@@ -126,6 +139,22 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 transaction_data=transaction,
                 velocity_factors=velocity_result.factors,
                 ato_factors=ato_result.factors
+            )
+            dec_time = time.time() - dec_start
+            
+            total_time = time.time() - tx_start
+
+            # 📊 Performance + Result Logging
+            logger = setup_logger_from_config(__name__, config)
+            logger.info(
+                f"TX {transaction_id}: "
+                f"prob={fraud_prob:.4f}, "
+                f"decision={decision_result.decision.value}, "
+                f"risk={decision_result.risk_level.value}, "
+                f"factors={len(decision_result.risk_factors)}, "
+                f"times(feat={feat_time:.2f}s, pred={pred_time:.2f}s, "
+                f"vel={vel_time:.2f}s, ato={ato_time:.2f}s, dec={dec_time:.2f}s, "
+                f"total={total_time:.2f}s)"
             )
 
             # 6. Build output record with original transaction data
