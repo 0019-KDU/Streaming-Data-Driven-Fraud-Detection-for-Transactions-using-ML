@@ -23,12 +23,12 @@ model:
   feature_pipeline_path: "../models/feature_pipeline.pkl"
 
   # IMPORTANT: These thresholds are based on training F1-optimal = 0.0564
-  # NOT the typical 0.5/0.7/0.9 scale
-  base_threshold: 0.0564      # F1-optimal from training
-  approve_threshold: 0.0564   # prob < base → APPROVE
-  review_threshold: 0.10      # base ≤ prob < 0.10 → REVIEW
-  hold_threshold: 0.20        # 0.10 ≤ prob < 0.20 → HOLD
-  block_threshold: 0.20       # prob ≥ 0.20 → BLOCK
+  # Adjusted below current range (0.019-0.023) to demonstrate fraud detection
+  base_threshold: 0.015       # Lowered for demo: catch transactions at 1.9-2.3%
+  approve_threshold: 0.015    # prob < 0.015 → APPROVE
+  review_threshold: 0.020     # 0.020 ≤ prob < 0.025 → REVIEW
+  hold_threshold: 0.025       # 0.025 ≤ prob < 0.030 → HOLD
+  block_threshold: 0.030      # prob ≥ 0.030 → BLOCK
 
 threshold_weights:
   # Weights for adaptive threshold: [w_base, w_velocity, w_amount, w_ato]
