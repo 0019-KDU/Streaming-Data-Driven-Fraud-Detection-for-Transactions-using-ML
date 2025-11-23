@@ -157,7 +157,7 @@ def initialize_services():
 # Request/Response models
 class PredictRequest(BaseModel):
     """Transaction prediction request"""
-    TransactionID: Optional[str] = None
+    TransactionID: Optional[int] = None
     TransactionDT: Optional[float] = None
     TransactionAmt: float = Field(..., gt=0)
     ProductCD: Optional[str] = "W"
