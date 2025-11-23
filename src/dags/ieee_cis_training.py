@@ -2092,8 +2092,8 @@ class IEEECISFraudTraining:
         X_valid: pd.DataFrame,
         y_valid: pd.Series
     ) -> Any:
-        """Train gradient boosting model (XGBoost/LightGBM/CatBoost)"""
-        logger.info("Training gradient boosting models...")
+        """Train XGBoost model (optimal model from notebook comparison)"""
+        logger.info("Training XGBoost model (best performer: AUC-ROC 0.9763)...")
 
         neg, pos = (y_train == 0).sum(), (y_train == 1).sum()
         
@@ -2109,252 +2109,49 @@ class IEEECISFraudTraining:
         
         scale_pos_weight = optimized_weight
         
-        # Focal loss for hard example mining
-        use_focal_loss = self.config.get("training", {}).get("use_focal_loss", True)
-        focal_alpha = self.config.get("training", {}).get("focal_loss_alpha", 0.25)
-        focal_gamma = self.config.get("training", {}).get("focal_loss_gamma", 2.0)
-        
-        if use_focal_loss:
-            logger.info(f"  Focal Loss enabled: alpha={focal_alpha}, gamma={focal_gamma}")
-            logger.info(f"     → Automatically focuses on hard-to-classify fraud cases")
-            focal_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
-        else:
-            logger.info(f"  Using standard binary cross-entropy loss")
-            focal_loss = None
-
         # Check if CPU-only mode is enabled
         force_cpu = self.config.get("training", {}).get("force_cpu_only", False)
         if force_cpu:
-            logger.info("  CPU-only mode enabled (skipping GPU attempts)")
+            logger.info("  CPU-only mode enabled (XGBoost on CPU)")
 
-        models_to_try = []
+        # XGBoost model with optimal hyperparameters from notebook comparison
+        # Performance: AUC-ROC 0.9763, F1-Score 0.6004, Recall 0.8853
+        if XGBClassifier is None:
+            raise ImportError("XGBoost not available. Please install xgboost package.")
+        
+        logger.info("  Training XGBoost with optimal hyperparameters from model comparison...")
+        logger.info("  Hyperparameters: n_estimators=500, max_depth=7, learning_rate=0.05")
+        
+        xgb_model = XGBClassifier(
+            n_estimators=500,
+            max_depth=7,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            scale_pos_weight=scale_pos_weight,
+            eval_metric="aucpr",
+            tree_method="hist",
+            random_state=RNG,
+            n_jobs=-1
+        )
+        
+        best_model = xgb_model
+        best_name = 'XGBoost'
 
-        # XGBoost with GPU support
-        if XGBClassifier is not None:
-            if not force_cpu:
-                try:
-                    logger.info("  Attempting XGBoost with GPU...")
-                    xgb_model = XGBClassifier(
-                        n_estimators=2000,
-                        max_depth=6,
-                        learning_rate=0.03,
-                        subsample=0.85,
-                        colsample_bytree=0.85,
-                        reg_alpha=0.1,
-                        reg_lambda=1.5,
-                        gamma=0.1,
-                        scale_pos_weight=scale_pos_weight,
-                        eval_metric="aucpr",
-                        tree_method="hist",
-                        device="cuda",
-                        random_state=RNG
-                    )
-                    models_to_try.append(('XGBoost-GPU', xgb_model))
-                except:
-                    logger.info("  XGBoost GPU failed, using CPU...")
-                    xgb_model = XGBClassifier(
-                        n_estimators=2000,
-                        max_depth=6,
-                        learning_rate=0.03,
-                        subsample=0.85,
-                        colsample_bytree=0.85,
-                        reg_alpha=0.1,
-                        reg_lambda=1.5,
-                        gamma=0.1,
-                        scale_pos_weight=scale_pos_weight,
-                        eval_metric="aucpr",
-                        tree_method="hist",
-                        random_state=RNG,
-                        n_jobs=-1
-                    )
-                    models_to_try.append(('XGBoost', xgb_model))
-            else:
-                logger.info("  Using XGBoost with CPU (optimized hyperparameters)...")
-                xgb_model = XGBClassifier(
-                    n_estimators=5000,
-                    max_depth=12,
-                    learning_rate=0.02,
-                    subsample=0.8,
-                    colsample_bytree=0.4,
-                    reg_alpha=0.0,
-                    reg_lambda=1.0,
-                    gamma=0.0,
-                    min_child_weight=1,
-                    scale_pos_weight=scale_pos_weight,
-                    eval_metric="aucpr",
-                    tree_method="hist",
-                    random_state=RNG,
-                    n_jobs=-1
-                )
-                models_to_try.append(('XGBoost', xgb_model))
-
-        # LightGBM with GPU support
-        if LGBMClassifier is not None:
-            if not force_cpu:
-                try:
-                    logger.info("  Attempting LightGBM with GPU...")
-                    lgbm_model = LGBMClassifier(
-                        n_estimators=5000,
-                        num_leaves=63,  # Reduced from 95 for better generalization
-                        learning_rate=0.03,
-                        subsample=0.85,
-                        colsample_bytree=0.85,
-                        reg_alpha=0.1,
-                        reg_lambda=1.5,
-                        min_child_samples=50,
-                        objective="binary",
-                        class_weight='balanced',  # Better fraud detection
-                        is_unbalance=True,  # Handle imbalanced classes (replaces scale_pos_weight)
-                        device="gpu",
-                        gpu_platform_id=0,
-                        gpu_device_id=0,
-                        random_state=RNG,
-                        verbose=-1
-                    )
-                    models_to_try.append(('LightGBM-GPU', lgbm_model))
-                except:
-                    logger.info("  LightGBM GPU failed, using CPU...")
-                    lgbm_model = LGBMClassifier(
-                        n_estimators=5000,
-                        num_leaves=63,
-                        learning_rate=0.03,
-                        subsample=0.85,
-                        colsample_bytree=0.85,
-                        reg_alpha=0.1,
-                        reg_lambda=1.5,
-                        min_child_samples=50,
-                        objective="binary",
-                        class_weight='balanced',  # Better fraud detection
-                        is_unbalance=True,  # Handle imbalanced classes (replaces scale_pos_weight)
-                        random_state=RNG,
-                        n_jobs=-1,
-                        verbose=-1
-                    )
-                    models_to_try.append(('LightGBM', lgbm_model))
-            else:
-                logger.info("  Using LightGBM with CPU...")
-                # Optimized hyperparameters for IEEE-CIS Dataset
-                # Tuned for fraud detection with 3.5% fraud rate, maximizes AUC-PR
-                
-                # Determine objective function based on config
-                if focal_loss is not None:
-                    objective = focal_loss
-                    model_name = 'LightGBM-FocalLoss'
-                else:
-                    objective = 'binary'
-                    model_name = 'LightGBM'
-                
-                lgbm_model = LGBMClassifier(
-                    n_estimators=3000,
-                    learning_rate=0.01,
-                    max_depth=8,
-                    num_leaves=127,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_alpha=0.5,
-                    reg_lambda=2.0,
-                    min_child_samples=100,
-                    min_child_weight=0.01,
-                    scale_pos_weight=optimized_weight,
-                    max_bin=511,
-                    objective=objective,
-                    random_state=RNG,
-                    n_jobs=-1,
-                    verbose=-1
-                )
-                models_to_try.append((model_name, lgbm_model))
-
-        # CatBoost with GPU support
-        if CatBoostClassifier is not None:
-            if not force_cpu:
-                try:
-                    logger.info("  Attempting CatBoost with GPU...")
-                    cat_model = CatBoostClassifier(
-                        iterations=4000,
-                        depth=6,  # Reduced from 10 to 6 for better generalization
-                        learning_rate=0.04,
-                        l2_leaf_reg=2.0,
-                        grow_policy='SymmetricTree',
-                        random_state=RNG,
-                        class_weights=[1.0, 30.0],  # Increased from scale_pos_weight to 30 for better fraud detection
-                        loss_function="Logloss",
-                        task_type="GPU",
-                        devices="0",
-                        verbose=False
-                    )
-                    models_to_try.append(('CatBoost-GPU', cat_model))
-                except:
-                    logger.info("  CatBoost GPU failed, using CPU...")
-                    cat_model = CatBoostClassifier(
-                        iterations=4000,
-                        depth=6,  # Reduced from 10 to 6 for better generalization
-                        learning_rate=0.04,
-                        l2_leaf_reg=2.0,
-                        grow_policy='SymmetricTree',
-                        random_state=RNG,
-                        class_weights=[1.0, 30.0],  # Increased from scale_pos_weight to 30 for better fraud detection
-                        loss_function="Logloss",
-                        verbose=False
-                    )
-                    models_to_try.append(('CatBoost', cat_model))
-            else:
-                logger.info("  Using CatBoost with CPU...")
-                cat_model = CatBoostClassifier(
-                    iterations=5000,
-                    depth=6,  # Reduced from 8 to 6 for better generalization
-                    learning_rate=0.03,
-                    l2_leaf_reg=3.0,
-                    border_count=254,
-                    grow_policy='SymmetricTree',
-                    random_state=RNG,
-                    class_weights=[1.0, 30.0],  # Increased from scale_pos_weight to 30 for better fraud detection
-                    loss_function="Logloss",
-                    verbose=False
-                )
-                models_to_try.append(('CatBoost', cat_model))
-
-        # Train and evaluate
-        best_model = None
-        best_score = 0.0
-        best_name = None
-
-        for name, model in models_to_try:
-            try:
-                logger.info(f"  Training {name}...")
-
-                if 'XGBoost' in name:
-                    model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=False)
-                elif 'LightGBM' in name:
-                    # Import log_evaluation callback for LightGBM
-                    try:
-                        from lightgbm.callback import log_evaluation
-                        model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)],
-                                callbacks=[log_evaluation(period=100)])
-                    except (ImportError, AttributeError):
-                        # Fallback for older lightgbm versions
-                        model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)])
-                else:
-                    model.fit(X_train, y_train, eval_set=(X_valid, y_valid), use_best_model=True)
-
-                y_valid_proba = model.predict_proba(X_valid)[:, 1]
-                auc_pr = average_precision_score(y_valid, y_valid_proba)
-                auc_roc = roc_auc_score(y_valid, y_valid_proba)
-
-                logger.info(f"    {name} - AUC-PR: {auc_pr:.4f}, AUC-ROC: {auc_roc:.4f}")
-
-                if auc_pr > best_score:
-                    best_score = auc_pr
-                    best_model = model
-                    best_name = name
-
-            except Exception as e:
-                logger.warning(f"  Failed to train {name}: {str(e)}")
-                continue
-
-        if best_model is None:
-            raise RuntimeError("All model training attempts failed")
-
-        logger.info(f"  Best model: {best_name} (AUC-PR: {best_score:.4f})")
+        # Train XGBoost model
+        try:
+            logger.info(f"  Training {best_name}...")
+            best_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=50)
+            
+            y_valid_proba = best_model.predict_proba(X_valid)[:, 1]
+            auc_pr = average_precision_score(y_valid, y_valid_proba)
+            auc_roc = roc_auc_score(y_valid, y_valid_proba)
+            
+            logger.info(f"  {best_name} Training Complete:")
+            logger.info(f"    AUC-PR: {auc_pr:.4f}")
+            logger.info(f"    AUC-ROC: {auc_roc:.4f}")
+        except Exception as e:
+            raise RuntimeError(f"XGBoost training failed: {str(e)}")
         return best_model
 
     def train_stacked_ensemble(
@@ -2658,24 +2455,28 @@ class IEEECISFraudTraining:
     ):
         """Log experiment to MLflow with comprehensive metrics and visualizations"""
         experiment_name = self.config.get("training", {}).get(
-            "experiment_name", "ieee_cis_fraud_detection"
+            "experiment_name", "xgboost_fraud_detection_ieee_cis"
         )
 
         mlflow.set_experiment(experiment_name)
 
         with mlflow.start_run():
             # ========== LOG PARAMETERS ==========
-            mlflow.log_param("model_type", "EnhancedEnsemble")
+            mlflow.log_param("model_type", "XGBoost")
+            mlflow.log_param("model_version", "optimal_from_notebook_comparison")
             mlflow.log_param("n_features", len(self.all_features))
-            mlflow.log_param("smote_enabled", True)
-            mlflow.log_param("smote_strategy", 0.7)
+            mlflow.log_param("n_estimators", 500)
+            mlflow.log_param("max_depth", 7)
+            mlflow.log_param("learning_rate", 0.05)
+            mlflow.log_param("subsample", 0.8)
+            mlflow.log_param("colsample_bytree", 0.8)
             mlflow.log_param("base_threshold", float(threshold))
-            mlflow.log_param("threshold_method", "hybrid")
-            mlflow.log_param("velocity_features", "enabled")
-            mlflow.log_param("adaptive_threshold", "enabled")
-            mlflow.log_param("hybrid_threshold", "enabled")
+            mlflow.log_param("threshold_method", "f1_optimal")
+            mlflow.log_param("smote_enabled", False)  # XGBoost handles imbalance well
             mlflow.log_param("frequency_encoding", "enabled")
             mlflow.log_param("mean_encoding", "enabled")
+            mlflow.log_param("magic_uid_features", "enabled")
+            mlflow.log_param("notebook_source", "Model_Comparison_Analysis_Complete.ipynb")
             
             # Get predictions
             y_valid_pred = (y_valid_proba >= threshold).astype(int)

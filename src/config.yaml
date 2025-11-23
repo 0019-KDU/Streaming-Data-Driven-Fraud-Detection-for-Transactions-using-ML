@@ -1,8 +1,8 @@
 mlflow:
-  experiment_name: "fraud_detection"
-  registered_model_name: "fraud_detection_xgboost"
+  experiment_name: "xgboost_fraud_detection"
+  registered_model_name: "fraud_detection_xgboost_v1"
   tracking_uri: "http://mlflow-server:5500"
-  artifact_location: "s3://mlflow/fraud_detection"
+  artifact_location: "s3://mlflow/xgboost_fraud_detection"
   s3_endpoint_url: "http://minio:9000"
   bucket: "mlflow"
   model_stage: "Production"
@@ -25,56 +25,58 @@ data:
     train_identity_path: "/app/data/ieee_cis/train_identity.csv"
     chronological_split_ratio: 0.80  # 80% earliest for train, 20% latest for validation
 
-# Training Configuration
+# Training Configuration - XGBoost Model
 training:
   use_external_model: true  # Set to true to use model from fyp.ipynb, false to retrain
-  model_path: "/app/models/fraud_detection_model.pkl"
+  model_path: "/app/models/fraud_detection_xgboost_model.pkl"
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
-  experiment_name: "ieee_cis_fraud_detection"
-  force_cpu_only: true  # Skip GPU attempts, use CPU directly (for VMs without GPU)
+  experiment_name: "xgboost_fraud_detection_ieee_cis"
+  force_cpu_only: true  # Use CPU for XGBoost (for VMs without GPU)
   # SMOTE configuration for class imbalance handling
-  use_smote: true
-  smote_sampling_strategy: 0.15  # 15% of majority class (reduced from 0.3 - less synthetic noise)
+  use_smote: false  # Disabled - XGBoost handles imbalance well with scale_pos_weight
+  smote_sampling_strategy: 0.15  # Not used when disabled
   
-  # 🆕 PHASE 2 & 3: Advanced Techniques for 96%+ AUC (Top 5% Kaggle)
-  use_forward_feature_selection: false  # ❌ DISABLED: Use all features
+  # Feature selection and optimization (optimized for XGBoost)
+  use_forward_feature_selection: false  # ❌ DISABLED: Use all features with XGBoost
   ffs_max_features: 50  # Stop FFS after 50 features (kept for later tuning)
   
-  # 🔥 NEW: Feature importance filtering (from 95.89 AUC project) +1-2% AUC
-  use_importance_filter: false  # ❌ DISABLED: 1st place uses all features (was removing Magic UID features)
-  importance_threshold: 0.0002  # Features below this importance are removed (from 95.89 AUC project)
+  # Feature importance filtering (disabled for XGBoost)
+  use_importance_filter: false  # ❌ DISABLED: XGBoost uses all features effectively
+  importance_threshold: 0.0002  # Not used when disabled
   
-  # Hyperparameter tuning disabled (manual tuning performs better)
-  use_randomized_search: false  # Disabled - manual hyperparameters achieve 0.80+ AUC
+  # Hyperparameter tuning disabled (using optimal params from notebook)
+  use_randomized_search: false  # Disabled - using optimal hyperparameters from comparison
   random_search_iterations: 10  # Not used
-  # Alternate imbalance strategy: when true, training code should compute scale_pos_weight = n_legit / n_fraud
+  # XGBoost automatically handles class imbalance with scale_pos_weight
   scale_pos_weight_auto: true
-  # Enable CV-based target encoding (k-fold target encoding) to avoid leakage
+  # CV-based target encoding to avoid leakage
   use_cv_target_encoding: true
   
-  # 🔥 NEW: Focal Loss for better handling of hard-to-classify fraud examples (+1-2% AUC)
-  use_focal_loss: false  # ❌ DISABLED: Focal Loss prevents LightGBM from learning (flat loss)
-  focal_loss_alpha: 0.25  # Weight for positive class (0.25 for highly imbalanced 3.5% fraud)
-  focal_loss_gamma: 2.0  # Focusing parameter (2.0 = moderate focus on hard examples)
-  # Optimized class weight (20.0 gives better precision-recall balance than theoretical 27.6)
-  optimized_scale_pos_weight: 20.0
+  # Focal Loss not used with XGBoost (standard cross-entropy works best)
+  use_focal_loss: false  # ❌ DISABLED: XGBoost performs best with standard loss
+  focal_loss_alpha: 0.25  # Not used
+  focal_loss_gamma: 2.0  # Not used
+  # Optimized class weight for XGBoost (from notebook comparison)
+  optimized_scale_pos_weight: 27.6  # Theoretical weight for 3.5% fraud rate
   
-  # 🔥 PHASE 1: Model Stacking (+2-4% AUC) - Ensemble of 3 models
-  use_model_stacking: false  # ❌ DISABLED: Single LightGBM (0.27 AUC-PR) beats stacked ensemble (0.13)
+  # Model Stacking disabled (single XGBoost outperforms ensemble)
+  use_model_stacking: false  # ❌ DISABLED: Single XGBoost (0.9763 AUC) is optimal
   # K-Fold CV target encoding is already enabled above (use_cv_target_encoding: true)
 
 model:
   test_size: 0.2
   seed: 42
   params:
-    n_estimators: 300
+    # XGBoost optimal hyperparameters from Model_Comparison_Analysis_Complete.ipynb
+    # Performance: AUC-ROC 0.9763, F1-Score 0.6004, Recall 0.8853
+    n_estimators: 500
     learning_rate: 0.05
-    max_depth: 5
+    max_depth: 7
     subsample: 0.8
     colsample_bytree: 0.8
-    scale_pos_weight: 1
+    scale_pos_weight: 1  # Auto-calculated during training
     tree_method: "hist"
-  path: "/app/models/fraud_detection_model.pkl"
+  path: "/app/models/fraud_detection_xgboost_model.pkl"
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
 
 # Inference Configuration (No VAE)
