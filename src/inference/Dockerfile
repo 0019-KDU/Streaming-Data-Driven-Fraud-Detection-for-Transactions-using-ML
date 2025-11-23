@@ -124,6 +124,9 @@ RUN useradd -m sparkuser && \
     chown -R sparkuser:sparkuser /app /spark
 USER sparkuser
 
+# Add dags directory to PYTHONPATH so ieee_cis_training module can be imported when unpickling model
+ENV PYTHONPATH="${PYTHONPATH}:/app/src/dags"
+
 # Run Spark Structured Streaming job
 CMD ["spark-submit", \
      "--conf", "spark.driver.defaultJavaOptions=-Dlog4j2.configuration=file:$SPARK_HOME/conf/log4j2.properties", \
