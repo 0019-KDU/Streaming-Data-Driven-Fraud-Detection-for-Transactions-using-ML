@@ -385,11 +385,13 @@ class ATOService:
         """Identify human-readable ATO risk factors."""
         factors = []
         
+        # ✅ FIX: Only add geo factor when ACTUALLY anomalous (>500km threshold)
         if geo_anomaly > 0.5:
-            dist = transaction_data.get('dist1', 0)
-            if dist > 0:
+            dist = transaction_data.get('dist1')
+            # Only flag if distance is actually high (>500km)
+            if dist and dist > 500:
                 factors.append(f"geo_anomaly_distance_{dist:.0f}km")
-            else:
+                # Also check for new address when distance is high
                 factors.append("geo_anomaly_new_address")
         
         if device_anomaly > 0.5:

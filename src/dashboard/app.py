@@ -351,16 +351,26 @@ def main():
     # Consume new messages
     fraud_messages, legit_messages = consume_messages(fraud_consumer, legit_consumer)
 
-    # Update session state
+    # Update session state with deduplication
     if fraud_messages:
-        st.session_state.fraud_count += len(fraud_messages)
-        st.session_state.transactions.extend(fraud_messages)
-        update_model_stats(fraud_messages)
+        # ✅ FIX: Deduplicate by transaction_id before adding
+        existing_tx_ids = {txn.get('transaction_id') for txn in st.session_state.transactions}
+        new_fraud = [msg for msg in fraud_messages if msg.get('transaction_id') not in existing_tx_ids]
+        
+        if new_fraud:
+            st.session_state.fraud_count += len(new_fraud)
+            st.session_state.transactions.extend(new_fraud)
+            update_model_stats(new_fraud)
 
     if legit_messages:
-        st.session_state.legit_count += len(legit_messages)
-        st.session_state.transactions.extend(legit_messages)
-        update_model_stats(legit_messages)
+        # ✅ FIX: Deduplicate by transaction_id before adding
+        existing_tx_ids = {txn.get('transaction_id') for txn in st.session_state.transactions}
+        new_legit = [msg for msg in legit_messages if msg.get('transaction_id') not in existing_tx_ids]
+        
+        if new_legit:
+            st.session_state.legit_count += len(new_legit)
+            st.session_state.transactions.extend(new_legit)
+            update_model_stats(new_legit)
 
     st.session_state.last_update = datetime.now()
 
