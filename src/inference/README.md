@@ -1,6 +1,6 @@
 # Fraud Detection Inference Service
 
-Production-ready real-time fraud detection inference service using **Spark Structured Streaming**, **Redis**, and **XGBoost**.
+Production-ready real-time fraud detection inference service using **Spark Structured Streaming**, **Redis**, and **LightGBM/XGBoost**.
 
 ## 📁 Architecture
 
@@ -10,7 +10,7 @@ src/inference/
 ├── config.py                      # Configuration loader (YAML + env vars)
 ├── config.yaml                    # Default configuration
 ├── schema.py                      # Spark schemas for IEEE-CIS transactions
-├── model_loader.py                # XGBoost model + pipeline loader
+├── model_loader.py                # LightGBM/XGBoost model + pipeline loader
 ├── feature_pipeline_spark.py      # Feature engineering (88 features)
 ├── velocity_service.py            # Redis-based velocity tracking
 ├── ato_service.py                 # Redis-based ATO detection
@@ -55,7 +55,7 @@ Parse JSON → Validate Schema
     ↓
 Feature Engineering (88 features)
     ↓
-ML Model Prediction (XGBoost)
+ML Model Prediction (LightGBM/XGBoost)
     ↓
 Velocity Analysis (Redis)
     ↓
@@ -120,6 +120,13 @@ ato:
 ```
 
 ## 📦 Output Format
+
+### Model Support
+
+The inference service supports both **LightGBM** and **XGBoost** models:
+- LightGBM models use `.predict()` with `num_iteration` parameter
+- XGBoost models use `.predict_proba()` 
+- Model type is auto-detected from the model bundle
 
 ### Fraud Predictions (Kafka topic: `fraud_predictions`)
 
@@ -240,7 +247,8 @@ redis>=4.5.0
 pandas>=1.5.0
 numpy>=1.23.0
 scikit-learn>=1.2.0
-xgboost>=1.7.0
+lightgbm>=4.1.0  # Primary model library
+xgboost>=1.7.0   # For compatibility
 joblib>=1.2.0
 pyyaml>=6.0
 ```

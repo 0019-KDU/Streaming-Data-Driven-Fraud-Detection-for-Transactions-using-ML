@@ -1,5 +1,5 @@
 """
-Model loader for trained XGBoost model and feature pipeline.
+Model loader for trained fraud detection models (LightGBM/XGBoost).
 
 Loads pre-trained artifacts from disk and provides prediction interface.
 """
@@ -18,6 +18,7 @@ logger = setup_logger(__name__)
 class ModelLoader:
     """
     Loads and manages the trained fraud detection model and feature pipeline.
+    Supports both LightGBM and XGBoost models.
     """
 
     def __init__(self, config):
@@ -32,6 +33,8 @@ class ModelLoader:
         self.feature_pipeline = None
         self.feature_names: List[str] = []
         self.model_metadata: Dict[str, Any] = {}
+        self.model_type: str = 'unknown'  # 'lightgbm', 'xgboost', or 'sklearn'
+        self.best_iteration: int = None  # For LightGBM num_iteration parameter
 
     def load(self) -> None:
         """
@@ -70,6 +73,19 @@ class ModelLoader:
                 logger.info(f"DEBUG: Extracted model from dict, type: {type(self.model)}, is None: {self.model is None}")
                 self.feature_names = model_bundle.get('feature_names', [])
                 
+                # Detect model type
+                model_class_name = type(self.model).__name__
+                if 'LightGBM' in model_class_name or 'Booster' in model_class_name:
+                    self.model_type = 'lightgbm'
+                    self.best_iteration = model_bundle.get('best_iteration', None)
+                    logger.info(f"✅ Detected LightGBM model (best_iteration={self.best_iteration})")
+                elif 'XGB' in model_class_name:
+                    self.model_type = 'xgboost'
+                    logger.info(f"✅ Detected XGBoost model")
+                else:
+                    self.model_type = 'sklearn'
+                    logger.info(f"✅ Detected scikit-learn compatible model")
+                
                 # ✅ FIX #1: Load threshold from bundle, validate against config
                 bundle_threshold = model_bundle.get('threshold')
                 config_threshold = self.config.model.base_threshold
@@ -87,11 +103,12 @@ class ModelLoader:
                     logger.warning(f"⚠️ No threshold in bundle, using config: {threshold:.4f}")
                 
                 self.model_metadata = {
-                    'model_type': model_bundle.get('model_type', 'unknown'),
+                    'model_type': self.model_type,
                     'threshold': threshold,
                     'metrics': model_bundle.get('metrics', {}),
                     'n_features': len(self.feature_names),
-                    'training_date': model_bundle.get('training_date', 'unknown')
+                    'training_date': model_bundle.get('training_date', 'unknown'),
+                    'best_iteration': self.best_iteration
                 }
             else:
                 # Fallback: assume it's just the model (raw pickle)
@@ -150,12 +167,24 @@ class ModelLoader:
             # Reorder columns to match training
             features_df = features_df[self.feature_names]
 
-        # Predict probabilities
+        # Predict probabilities based on model type
         try:
-            probas = self.model.predict_proba(features_df)[:, 1]
-            return probas
+            if self.model_type == 'lightgbm':
+                # LightGBM model - use predict() with num_iteration
+                if self.best_iteration:
+                    probas = self.model.predict(features_df, num_iteration=self.best_iteration)
+                    logger.debug(f"LightGBM prediction with best_iteration={self.best_iteration}")
+                else:
+                    probas = self.model.predict(features_df)
+                    logger.debug("LightGBM prediction without num_iteration")
+                # LightGBM predict returns probabilities directly
+                return probas if len(probas.shape) == 1 else probas[:, 1]
+            else:
+                # XGBoost or sklearn model - use predict_proba
+                probas = self.model.predict_proba(features_df)[:, 1]
+                return probas
         except Exception as e:
-            logger.error(f"Prediction failed: {e}")
+            logger.error(f"Prediction failed for {self.model_type} model: {e}")
             raise
 
     def predict_single(self, features: Dict[str, float]) -> float:

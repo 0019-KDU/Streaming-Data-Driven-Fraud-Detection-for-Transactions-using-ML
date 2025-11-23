@@ -24,31 +24,20 @@ from src.inference.config import Config
 from src.inference.schema import get_transaction_schema
 from src.inference.model_loader import ModelLoader
 from src.inference.feature_pipeline_spark import create_feature_pipeline
-from src.inference.velocity_service import VelocityService
-from src.inference.ato_service import ATOService
-from src.inference.decision_engine import HybridDecisionEngine
 from src.inference.logging_utils import setup_logger_from_config
-from src.inference.utils.redis_client import get_redis_client
 
 # Global instances (initialized once per executor)
 _model_loader = None
 _feature_pipeline = None
-_velocity_service = None
-_ato_service = None
-_decision_engine = None
 _config = None
-_redis_client = None
 
 
 def get_or_create_services(config):
     """Initialize services once per executor (singleton pattern)."""
-    global _model_loader, _feature_pipeline, _velocity_service, _ato_service, _decision_engine, _config, _redis_client
+    global _model_loader, _feature_pipeline, _config
 
     if _config is None:
         _config = config
-
-    if _redis_client is None:
-        _redis_client = get_redis_client(config)
 
     if _model_loader is None:
         _model_loader = ModelLoader(config)
@@ -57,18 +46,7 @@ def get_or_create_services(config):
     if _feature_pipeline is None:
         _feature_pipeline = create_feature_pipeline(config)
 
-    if _velocity_service is None:
-        _velocity_service = VelocityService(_redis_client, config)
-
-    if _ato_service is None:
-        _ato_service = ATOService(_redis_client, config)
-
-    if _decision_engine is None:
-        # ✅ FIX #1: Pass model metadata to decision engine for threshold
-        model_metadata = _model_loader.get_metadata()
-        _decision_engine = HybridDecisionEngine(config, model_metadata)
-
-    return _model_loader, _feature_pipeline, _velocity_service, _ato_service, _decision_engine
+    return _model_loader, _feature_pipeline
 
 
 def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
@@ -83,8 +61,7 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
         Pandas DataFrame with predictions
     """
     # Initialize services
-    model_loader, feature_pipeline, velocity_service, ato_service, decision_engine = \
-        get_or_create_services(config)
+    model_loader, feature_pipeline = get_or_create_services(config)
 
     results = []
 
@@ -109,38 +86,18 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
             pred_start = time.time()
             fraud_prob = float(model_loader.predict(features_df)[0])
             pred_time = time.time() - pred_start
-
-            # 3. Analyze velocity
-            vel_start = time.time()
-            card1 = str(transaction.get('card1', 'unknown'))
-            uid = f"{card1}_{transaction.get('addr1', 'na')}_{transaction.get('P_emaildomain', 'na')}"
+            
+            # 3. Determine decision based on threshold
+            threshold = model_loader.get_metadata().get('threshold', 0.5)
             amount = float(transaction.get('TransactionAmt', 0.0))
-            timestamp = float(transaction.get('TransactionDT', 0.0))
-
-            # Velocity service now does check + record in one call
-            velocity_result = velocity_service.check_velocity(
-                card1, uid, amount, timestamp
-            )
-            vel_time = time.time() - vel_start
-
-            # 4. Analyze ATO
-            ato_start = time.time()
-            ato_result = ato_service.check_ato(card1, transaction)
-            ato_time = time.time() - ato_start
-
-            # 5. Make final decision
-            dec_start = time.time()
-            decision_result = decision_engine.make_decision(
-                fraud_probability=fraud_prob,
-                velocity_risk=velocity_result.velocity_risk,
-                amount_risk=velocity_result.amount_risk,
-                ato_risk=ato_result.ato_risk,
-                ato_detected=ato_result.ato_detected,
-                transaction_data=transaction,
-                velocity_factors=velocity_result.factors,
-                ato_factors=ato_result.factors
-            )
-            dec_time = time.time() - dec_start
+            
+            # Simple threshold-based decision
+            if fraud_prob >= threshold:
+                decision = 'FRAUD'
+                risk_level = 'HIGH'
+            else:
+                decision = 'LEGITIMATE'
+                risk_level = 'LOW'
             
             total_time = time.time() - tx_start
 
@@ -149,27 +106,22 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
             logger.info(
                 f"TX {transaction_id}: "
                 f"prob={fraud_prob:.4f}, "
-                f"decision={decision_result.decision.value}, "
-                f"risk={decision_result.risk_level.value}, "
-                f"factors={len(decision_result.risk_factors)}, "
+                f"decision={decision}, "
+                f"risk={risk_level}, "
+                f"threshold={threshold:.4f}, "
                 f"times(feat={feat_time:.2f}s, pred={pred_time:.2f}s, "
-                f"vel={vel_time:.2f}s, ato={ato_time:.2f}s, dec={dec_time:.2f}s, "
                 f"total={total_time:.2f}s)"
             )
 
-            # 6. Build output record with original transaction data
+            # 4. Build output record with original transaction data
             output = {
                 'transaction_id': transaction_id,
                 'fraud_probability': fraud_prob,
-                'decision': decision_result.decision.value,
-                'risk_level': decision_result.risk_level.value,
-                'risk_factors': json.dumps(decision_result.risk_factors),
-                'ato_risk': ato_result.ato_risk,
-                'velocity_risk': velocity_result.velocity_risk,
-                'amount_risk': velocity_result.amount_risk,
+                'decision': decision,
+                'risk_level': risk_level,
+                'threshold': threshold,
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
                 # Include original transaction fields for dashboard
-                # Use the already-extracted amount variable to ensure consistency
                 'TransactionAmt': amount,
                 'ProductCD': str(transaction.get('ProductCD', 'N/A')),
                 'card1': str(transaction.get('card1', 'N/A')),
@@ -189,12 +141,9 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
             results.append({
                 'transaction_id': transaction_id,
                 'fraud_probability': 0.5,
-                'decision': 'REVIEW',
-                'risk_level': 'MEDIUM',
-                'risk_factors': json.dumps(['processing_error']),
-                'ato_risk': 0.0,
-                'velocity_risk': 0.0,
-                'amount_risk': 0.0,
+                'decision': 'ERROR',
+                'risk_level': 'UNKNOWN',
+                'threshold': 0.5,
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
                 # Include original transaction fields even in error case
                 'TransactionAmt': float(transaction.get('TransactionAmt', 0.0)),
@@ -261,10 +210,7 @@ def main():
         StructField("fraud_probability", DoubleType(), False),
         StructField("decision", StringType(), False),
         StructField("risk_level", StringType(), False),
-        StructField("risk_factors", StringType(), False),
-        StructField("ato_risk", DoubleType(), False),
-        StructField("velocity_risk", DoubleType(), False),
-        StructField("amount_risk", DoubleType(), False),
+        StructField("threshold", DoubleType(), False),
         StructField("timestamp", StringType(), False),
         # Original transaction fields for dashboard
         StructField("TransactionAmt", DoubleType(), False),
@@ -289,11 +235,11 @@ def main():
 
     # Route to fraud/legit topics based on decision
     fraud_df = predictions_df.filter(
-        col("decision").isin(["BLOCK", "HOLD", "REVIEW"])
+        col("decision") == "FRAUD"
     )
 
     legit_df = predictions_df.filter(
-        col("decision") == "APPROVE"
+        col("decision") == "LEGITIMATE"
     )
 
     # Write fraud predictions to Kafka
