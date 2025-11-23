@@ -67,6 +67,35 @@ ato_service = None
 decision_engine = None
 
 
+# Mock services for when Redis is unavailable
+class MockVelocityResult:
+    """Mock velocity result with zero risk"""
+    def __init__(self):
+        self.velocity_risk = 0.0
+        self.amount_risk = 0.0
+        self.factors = []
+
+
+class MockATOResult:
+    """Mock ATO result with zero risk"""
+    def __init__(self):
+        self.ato_risk = 0.0
+        self.ato_detected = False
+        self.factors = []
+
+
+class MockVelocityService:
+    """Mock velocity service when Redis unavailable"""
+    def check_velocity(self, card1, uid, amount, timestamp):
+        return MockVelocityResult()
+
+
+class MockATOService:
+    """Mock ATO service when Redis unavailable"""
+    def check_ato(self, card1, transaction):
+        return MockATOResult()
+
+
 def initialize_services():
     """Initialize all services once at startup"""
     global config, model_loader, feature_pipeline, velocity_service, ato_service, decision_engine
@@ -78,9 +107,14 @@ def initialize_services():
         config = Config.load()
         logger.info("✅ Config loaded")
         
-        # Initialize Redis
-        redis_client = get_redis_client(config)
-        logger.info("✅ Redis connected")
+        # Initialize Redis (optional - use mock if unavailable)
+        try:
+            redis_client = get_redis_client(config)
+            logger.info("✅ Redis connected")
+        except Exception as redis_error:
+            logger.warning(f"⚠️  Redis unavailable: {redis_error}")
+            logger.warning("⚠️  Using mock Redis client (velocity/ATO features disabled)")
+            redis_client = None
         
         # Load model
         model_loader = ModelLoader(config)
@@ -94,11 +128,19 @@ def initialize_services():
         feature_pipeline = joblib.load(pipeline_path)
         logger.info("✅ Feature pipeline loaded")
         
-        # Initialize services
-        velocity_service = VelocityService(redis_client, config)
-        ato_service = ATOService(redis_client, config)
+        # Initialize services (with mock redis if needed)
+        if redis_client:
+            velocity_service = VelocityService(redis_client, config)
+            ato_service = ATOService(redis_client, config)
+            logger.info("✅ Services initialized with Redis")
+        else:
+            # Create mock services that return zero risk
+            velocity_service = MockVelocityService()
+            ato_service = MockATOService()
+            logger.info("✅ Services initialized with mock (Redis unavailable)")
+        
         decision_engine = HybridDecisionEngine(config, model_metadata)
-        logger.info("✅ Services initialized")
+        logger.info("✅ Decision engine initialized")
         
         logger.info("="*80)
         logger.info("🚀 Direct Fraud Detection API Ready!")
