@@ -5,19 +5,30 @@ import sys
 import json
 
 print("Loading model and pipeline...")
-# Load model - adjust path based on where script is run from
-try:
-    model_path = '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/xgboost_fraud_model.pkl'
-    with open(model_path, 'rb') as f:
-        model_data = pickle.load(f)
-        model = model_data['model']
-        feature_names = model_data['feature_names']
-except FileNotFoundError:
-    model_path = '../src/models/xgboost_fraud_model.pkl'
-    with open(model_path, 'rb') as f:
-        model_data = pickle.load(f)
-        model = model_data['model']
-        feature_names = model_data['feature_names']
+# Load model - try different possible paths and names
+model_paths = [
+    '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/fraud_detection_model.pkl',
+    '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/xgboost_fraud_model.pkl',
+    '../src/models/fraud_detection_model.pkl',
+    '../src/models/xgboost_fraud_model.pkl'
+]
+
+model = None
+for model_path in model_paths:
+    try:
+        with open(model_path, 'rb') as f:
+            model_data = pickle.load(f)
+            model = model_data['model']
+            feature_names = model_data['feature_names']
+            print(f"✅ Model loaded from: {model_path}")
+            break
+    except FileNotFoundError:
+        continue
+
+if model is None:
+    print("❌ Model file not found. Please check models directory:")
+    print("   Run: ls -la /home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/")
+    sys.exit(1)
 
 print(f"Model loaded with {len(feature_names)} features")
 print(f"Threshold: {model_data.get('threshold', 0.05639991909265518)}")
