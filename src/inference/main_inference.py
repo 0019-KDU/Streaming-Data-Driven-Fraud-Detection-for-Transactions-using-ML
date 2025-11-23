@@ -94,6 +94,7 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
 
         try:
             # 1. Apply feature engineering
+            # ✅ FIX: Use .feature_pipeline (the loaded pickle) directly
             features_df = feature_pipeline.feature_pipeline.transform(
                 pd.DataFrame([transaction])
             )
