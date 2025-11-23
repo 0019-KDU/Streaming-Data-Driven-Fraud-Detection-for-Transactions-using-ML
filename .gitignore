@@ -30,7 +30,7 @@ src/config.yaml
 .vscode/
 .idea/
 data
-ieee-fraud-detection
+ieee-fraud-detection/*.csv
 
 # Large Model Artifacts
 *.pkl
