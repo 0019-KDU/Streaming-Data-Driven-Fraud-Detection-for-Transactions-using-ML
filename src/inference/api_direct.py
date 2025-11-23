@@ -26,6 +26,9 @@ import numpy as np
 # Add parent directory to path
 sys.path.insert(0, '/app')
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add dags directory for ieee_cis_training module (needed to unpickle model)
+dags_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dags')
+sys.path.insert(0, dags_path)
 
 from inference.config import Config
 from inference.model_loader import ModelLoader
