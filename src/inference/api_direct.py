@@ -178,7 +178,7 @@ class PredictRequest(BaseModel):
 
 class PredictResponse(BaseModel):
     """Prediction response"""
-    transaction_id: str
+    transaction_id: Optional[int] = None
     fraud_probability: float
     decision: str
     risk_level: str
