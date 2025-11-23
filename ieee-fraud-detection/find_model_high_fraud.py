@@ -5,6 +5,17 @@ import sys
 import json
 import joblib
 
+# Add paths for custom modules
+sys.path.insert(0, '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/inference')
+sys.path.insert(0, '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/dags')
+
+# Import custom modules that the model was trained with
+try:
+    import ieee_cis_training
+    print("✅ Imported ieee_cis_training module")
+except ImportError as e:
+    print(f"⚠️ Could not import ieee_cis_training: {e}")
+
 print("Loading model and pipeline...")
 # Load model - try different possible paths and names
 import dill
