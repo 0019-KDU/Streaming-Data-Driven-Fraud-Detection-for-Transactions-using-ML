@@ -139,12 +139,13 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 'amount_risk': velocity_result.amount_risk,
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
                 # Include original transaction fields for dashboard
-                'TransactionAmt': float(transaction.get('TransactionAmt', 0.0)) if pd.notna(transaction.get('TransactionAmt')) else 0.0,
-                'ProductCD': str(transaction.get('ProductCD', 'N/A')) if pd.notna(transaction.get('ProductCD')) else 'N/A',
-                'card1': str(transaction.get('card1', 'N/A')) if pd.notna(transaction.get('card1')) else 'N/A',
-                'card4': str(transaction.get('card4', 'N/A')) if pd.notna(transaction.get('card4')) else 'N/A',
-                'card6': str(transaction.get('card6', 'N/A')) if pd.notna(transaction.get('card6')) else 'N/A',
-                'P_emaildomain': str(transaction.get('P_emaildomain', 'N/A')) if pd.notna(transaction.get('P_emaildomain')) else 'N/A',
+                # Use the already-extracted amount variable to ensure consistency
+                'TransactionAmt': amount,
+                'ProductCD': str(transaction.get('ProductCD', 'N/A')),
+                'card1': str(transaction.get('card1', 'N/A')),
+                'card4': str(transaction.get('card4', 'N/A')),
+                'card6': str(transaction.get('card6', 'N/A')),
+                'P_emaildomain': str(transaction.get('P_emaildomain', 'N/A')),
             }
 
             results.append(output)
@@ -166,12 +167,12 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 'amount_risk': 0.0,
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
                 # Include original transaction fields even in error case
-                'TransactionAmt': float(transaction.get('TransactionAmt', 0.0)) if pd.notna(transaction.get('TransactionAmt')) else 0.0,
-                'ProductCD': str(transaction.get('ProductCD', 'N/A')) if pd.notna(transaction.get('ProductCD')) else 'N/A',
-                'card1': str(transaction.get('card1', 'N/A')) if pd.notna(transaction.get('card1')) else 'N/A',
-                'card4': str(transaction.get('card4', 'N/A')) if pd.notna(transaction.get('card4')) else 'N/A',
-                'card6': str(transaction.get('card6', 'N/A')) if pd.notna(transaction.get('card6')) else 'N/A',
-                'P_emaildomain': str(transaction.get('P_emaildomain', 'N/A')) if pd.notna(transaction.get('P_emaildomain')) else 'N/A',
+                'TransactionAmt': float(transaction.get('TransactionAmt', 0.0)),
+                'ProductCD': str(transaction.get('ProductCD', 'N/A')),
+                'card1': str(transaction.get('card1', 'N/A')),
+                'card4': str(transaction.get('card4', 'N/A')),
+                'card6': str(transaction.get('card6', 'N/A')),
+                'P_emaildomain': str(transaction.get('P_emaildomain', 'N/A')),
             })
 
     return pd.DataFrame(results)
