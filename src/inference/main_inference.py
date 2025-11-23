@@ -224,7 +224,7 @@ def main():
 
     logger.info("Kafka stream configured")
 
-    # Define output schema
+    # Define output schema (must match process_batch return fields)
     output_schema = StructType([
         StructField("transaction_id", StringType(), False),
         StructField("fraud_probability", DoubleType(), False),
@@ -235,6 +235,13 @@ def main():
         StructField("velocity_risk", DoubleType(), False),
         StructField("amount_risk", DoubleType(), False),
         StructField("timestamp", StringType(), False),
+        # Original transaction fields for dashboard
+        StructField("TransactionAmt", DoubleType(), False),
+        StructField("ProductCD", StringType(), False),
+        StructField("card1", StringType(), False),
+        StructField("card4", StringType(), False),
+        StructField("card6", StringType(), False),
+        StructField("P_emaildomain", StringType(), False),
     ])
 
     # Apply inference using mapInPandas (Spark 3.0+)
