@@ -108,6 +108,7 @@ fraud_full = fraud_df.merge(train_ident, on='TransactionID', how='left')
 
 print("\nScoring fraud transactions with model...")
 high_fraud_results = []
+errors = []
 
 for idx, row in fraud_full.head(50).iterrows():
     try:
@@ -118,7 +119,10 @@ for idx, row in fraud_full.head(50).iterrows():
         features_df = pipeline.transform(pd.DataFrame([trans_dict]))
         
         # Predict
-        fraud_prob = model.predict_proba(features_df[feature_names])[:, 1][0]
+        if len(feature_names) > 0:
+            fraud_prob = model.predict_proba(features_df[feature_names])[:, 1][0]
+        else:
+            fraud_prob = model.predict_proba(features_df)[:, 1][0]
         
         high_fraud_results.append({
             'TransactionID': int(row['TransactionID']),
@@ -133,7 +137,13 @@ for idx, row in fraud_full.head(50).iterrows():
         if fraud_prob > 0.03:  # Over 3% (above threshold)
             print(f"✅ Transaction {int(row['TransactionID'])}: {fraud_prob*100:.1f}% fraud | ${row['TransactionAmt']} | {row['card4']} {row['card1']} | {row['P_emaildomain']}")
     except Exception as e:
+        errors.append(f"Transaction {row['TransactionID']}: {str(e)}")
+        if len(errors) <= 3:  # Show first 3 errors
+            print(f"❌ Error on transaction {row['TransactionID']}: {e}")
         continue
+
+if errors:
+    print(f"\n⚠️ Total errors: {len(errors)} out of 50 transactions")
 
 # Sort by fraud probability
 high_fraud_results.sort(key=lambda x: x['fraud_probability'], reverse=True)
