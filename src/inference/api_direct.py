@@ -29,11 +29,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from inference.config import Config
 from inference.model_loader import ModelLoader
-from inference.feature_pipeline import FeaturePipeline
 from inference.velocity_service import VelocityService
 from inference.ato_service import ATOService
 from inference.decision_engine import HybridDecisionEngine
 from inference.utils.redis_client import get_redis_client
+import joblib
 
 # Configure logging
 logging.basicConfig(
@@ -88,8 +88,10 @@ def initialize_services():
         model_metadata = model_loader.get_metadata()
         logger.info(f"✅ Model loaded: {model_metadata.get('threshold', 0.0):.4%} threshold")
         
-        # Initialize feature pipeline
-        feature_pipeline = FeaturePipeline(config)
+        # Load feature pipeline directly from pickle file
+        pipeline_path = config.model.feature_pipeline_path
+        logger.info(f"Loading feature pipeline from: {pipeline_path}")
+        feature_pipeline = joblib.load(pipeline_path)
         logger.info("✅ Feature pipeline loaded")
         
         # Initialize services
@@ -197,7 +199,8 @@ async def predict_fraud(request: PredictRequest):
             # ✅ FIX #2: Ensure TransactionAmt is properly converted to float
             transaction['TransactionAmt'] = float(transaction.get('TransactionAmt', 0.0))
             
-            features_df = feature_pipeline.feature_pipeline.transform(
+            # Transform using the loaded feature pipeline
+            features_df = feature_pipeline.transform(
                 pd.DataFrame([transaction])
             )
             logger.info(f"  Engineered {len(features_df.columns)} features")
