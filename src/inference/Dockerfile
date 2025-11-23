@@ -1,7 +1,7 @@
 # Stage 1: Builder stage
 FROM python:3.10.16-slim-bookworm as builder
 
-# Install build dependencies
+# Install build dependencies (including libgomp for LightGBM/XGBoost)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
@@ -10,6 +10,7 @@ RUN apt-get update && \
     gcc \
     python3-dev \
     openjdk-17-jdk-headless \
+    libgomp1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -91,13 +92,14 @@ COPY dags/feature_pipeline.py /app/src/dags/
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime
 
-# Install runtime dependencies
+# Install runtime dependencies (including libgomp for LightGBM/XGBoost at runtime)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless \
     procps \
     ca-certificates \
     curl \
+    libgomp1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
