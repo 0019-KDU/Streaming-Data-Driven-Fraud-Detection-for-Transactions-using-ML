@@ -110,11 +110,12 @@ print(f"Found {len(fraud_df)} fraud transactions in first 100K rows")
 # Merge with identity
 fraud_full = fraud_df.merge(train_ident, on='TransactionID', how='left')
 
-print("\nScoring fraud transactions with model...")
+print(f"\nScoring {len(fraud_full)} fraud transactions with model...")
+print("(This may take 3-5 minutes...)\n")
 high_fraud_results = []
 errors = []
 
-for idx, row in fraud_full.head(50).iterrows():
+for idx, row in fraud_full.iterrows():
     try:
         # Convert to dict (drop isFraud)
         trans_dict = row.drop('isFraud').to_dict()
@@ -138,8 +139,12 @@ for idx, row in fraud_full.head(50).iterrows():
             'P_emaildomain': str(row['P_emaildomain']) if pd.notna(row['P_emaildomain']) else None
         })
         
-        if fraud_prob > 0.03:  # Over 3% (above threshold)
-            print(f"✅ Transaction {int(row['TransactionID'])}: {fraud_prob*100:.1f}% fraud | ${row['TransactionAmt']} | {row['card4']} {row['card1']} | {row['P_emaildomain']}")
+        # Show progress every 500 transactions
+        if len(high_fraud_results) % 500 == 0 and len(high_fraud_results) > 0:
+            print(f"  Processed {len(high_fraud_results)} transactions... Max so far: {max(r['fraud_probability'] for r in high_fraud_results)*100:.2f}%")
+        
+        if fraud_prob > 0.05:  # Over 5% (at/above threshold)
+            print(f"🔥 HIGH FRAUD! Transaction {int(row['TransactionID'])}: {fraud_prob*100:.2f}% fraud | ${row['TransactionAmt']} | {row['card4']} {row['card1']} | {row['P_emaildomain']}")
     except Exception as e:
         errors.append(f"Transaction {row['TransactionID']}: {str(e)}")
         if len(errors) <= 3:  # Show first 3 errors
@@ -147,7 +152,9 @@ for idx, row in fraud_full.head(50).iterrows():
         continue
 
 if errors:
-    print(f"\n⚠️ Total errors: {len(errors)} out of 50 transactions")
+    print(f"\n⚠️ Total errors: {len(errors)} out of {len(fraud_full)} transactions")
+
+print(f"\n✅ Successfully scored {len(high_fraud_results)} transactions")
 
 # Sort by fraud probability
 high_fraud_results.sort(key=lambda x: x['fraud_probability'], reverse=True)
