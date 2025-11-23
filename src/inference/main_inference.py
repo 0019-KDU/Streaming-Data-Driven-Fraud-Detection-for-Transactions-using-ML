@@ -122,7 +122,7 @@ def process_batch(batch_df: pd.DataFrame, config) -> pd.DataFrame:
                 amount_risk=velocity_result.amount_risk,
                 ato_risk=ato_result.ato_risk,
                 ato_detected=ato_result.ato_detected,
-                transaction=transaction,
+                transaction_data=transaction,
                 velocity_factors=velocity_result.factors,
                 ato_factors=ato_result.factors
             )

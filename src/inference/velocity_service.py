@@ -331,6 +331,11 @@ class VelocityService:
     ) -> None:
         """Record transaction in Redis for future velocity checks."""
         try:
+            # Validate amount is a valid number
+            if amount is None or not isinstance(amount, (int, float)) or (isinstance(amount, float) and (amount != amount)):  # Check for NaN
+                logger.warning(f"Invalid amount value: {amount}, skipping velocity recording")
+                return
+                
             # Record transaction timestamp
             txn_key = f"velocity:{card_id}:{user_id}:txns"
             self.redis.zadd(txn_key, {str(timestamp): timestamp})
