@@ -88,11 +88,15 @@ if model is None:
 print(f"Model loaded with {len(feature_names)} features")
 print(f"Threshold: {threshold}")
 
-# Load feature pipeline
-sys.path.append('/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/inference')
-from feature_pipeline import IEEECISFeaturePipeline
-
-pipeline = IEEECISFeaturePipeline()
+# Load feature pipeline WITH aggregation maps
+pipeline_path = '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/feature_pipeline.pkl'
+print(f"Loading feature pipeline from: {pipeline_path}")
+try:
+    pipeline = joblib.load(pipeline_path)
+    print("✅ Feature pipeline loaded with aggregation maps")
+except Exception as e:
+    print(f"❌ Failed to load feature pipeline: {e}")
+    sys.exit(1)
 
 print("\nLoading fraud transactions from training data...")
 # Load only fraud transactions (isFraud=1)
