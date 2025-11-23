@@ -2440,11 +2440,70 @@ class IEEECISFraudTraining:
             self.feature_pipeline.card4_amt_mean = self.card4_amt_mean
             self.feature_pipeline.card4_amt_std = self.card4_amt_std
             logger.info("  ✅ Saved card4 aggregation statistics")
+        
+        # ✅ NEW: Save mean encoding maps for inference (fraud rate encoding)
+        if hasattr(self, 'mean_maps'):
+            self.feature_pipeline.mean_encoding_maps = self.mean_maps
+            logger.info(f"  ✅ Saved mean encoding maps ({len(self.mean_maps)} columns)")
+        
+        # ✅ NEW: Compute and save Magic UID, card encoding, and group aggregation stats for inference
+        # These are needed to apply the same transformations at inference time
+        if hasattr(self, 'train_df_full'):
+            logger.info("  Computing aggregation statistics for inference...")
+            
+            # Magic UID statistics (extract from training data before it's cleaned up)
+            magic_uid_stats = {}
+            if 'card1_addr1' in self.train_df_full.columns and 'TransactionDT' in self.train_df_full.columns:
+                # Recreate magic_uid for lookup
+                self.train_df_full['day'] = self.train_df_full['TransactionDT'] / (24 * 60 * 60)
+                if 'D1' in self.train_df_full.columns:
+                    self.train_df_full['magic_uid'] = (self.train_df_full['card1_addr1'].astype(str) + '_' + 
+                                                        np.floor(self.train_df_full['day'] - self.train_df_full['D1']).fillna(-999).astype(str))
+                else:
+                    self.train_df_full['magic_uid'] = self.train_df_full['card1_addr1'].astype(str)
+                
+                # Extract all magic_uid aggregation features
+                for feat in [c for c in self.all_features if 'magic_uid' in c]:
+                    if feat in self.X_train.columns:
+                        # Create lookup: magic_uid → feature value
+                        magic_uid_stats[feat] = dict(zip(self.train_df_full['magic_uid'], self.X_train[feat]))
+                
+                self.feature_pipeline.magic_uid_stats = magic_uid_stats
+                logger.info(f"  ✅ Saved Magic UID statistics ({len(magic_uid_stats)} features)")
+            
+            # Card encoding maps (frequency encoding for card combinations)
+            card_encoding_maps = {}
+            for feat in [c for c in self.all_features if c.endswith('_FE')]:
+                # These are already computed during training, store the frequency maps
+                pass  # Already in freq_maps
+            
+            # Group aggregation statistics (for TransactionAmt, D9, D11 by card1, card1_addr1, etc.)
+            group_agg_stats = {}
+            for feat in [c for c in self.all_features if any(x in c for x in [
+                'TransactionAmt_card1_', 'D9_card1_', 'D11_card1_'
+            ])]:
+                if feat in self.X_train.columns:
+                    # Extract group key from feature name
+                    if 'card1_addr1_P_emaildomain' in feat:
+                        # Create combined key
+                        if all(c in self.train_df_full.columns for c in ['card1_addr1', 'P_emaildomain']):
+                            key_col = self.train_df_full['card1_addr1'].astype(str) + '_' + self.train_df_full['P_emaildomain'].fillna('na').astype(str)
+                            group_agg_stats[feat] = dict(zip(key_col, self.X_train[feat]))
+                    elif 'card1_addr1' in feat:
+                        if 'card1_addr1' in self.train_df_full.columns:
+                            group_agg_stats[feat] = dict(zip(self.train_df_full['card1_addr1'], self.X_train[feat]))
+                    elif 'card1' in feat:
+                        if 'card1' in self.train_df_full.columns:
+                            group_agg_stats[feat] = dict(zip(self.train_df_full['card1'], self.X_train[feat]))
+            
+            if group_agg_stats:
+                self.feature_pipeline.group_agg_stats = group_agg_stats
+                logger.info(f"  ✅ Saved group aggregation statistics ({len(group_agg_stats)} features)")
 
         # Save feature pipeline separately for inference compatibility
         pipeline_path = self.config["training"]["feature_pipeline_path"]
         joblib.dump(self.feature_pipeline, pipeline_path)
-        logger.info(f"  ✅ Feature pipeline (with transform() + card stats) saved to: {pipeline_path}")
+        logger.info(f"  ✅ Feature pipeline (with transform() + all statistics) saved to: {pipeline_path}")
 
     def log_to_mlflow(
         self,
@@ -2779,6 +2838,9 @@ class IEEECISFraudTraining:
         split_idx = int(len(df) * split_ratio)
         train_df = df.iloc[:split_idx].copy()
         valid_df = df.iloc[split_idx:].copy()
+        
+        # ✅ Save reference to full training dataframe for later statistics extraction
+        self.train_df_full = train_df.copy()
 
         logger.info(f"Chronological split:")
         logger.info(f"  Train: {len(train_df):,} ({train_df['isFraud'].mean():.4%} fraud)")
@@ -2793,6 +2855,10 @@ class IEEECISFraudTraining:
         # Select features
         X_train, y_train = self.select_all_features(train_df)
         X_valid, y_valid = self.select_all_features(valid_df)
+        
+        # ✅ Save reference for statistics extraction in save_artifacts()
+        self.X_train = X_train
+        self.X_valid = X_valid
 
         logger.info(f"Final feature set:")
         logger.info(f"  X_train: {X_train.shape}")
