@@ -1,0 +1,94 @@
+# Fraud Detection Inference Configuration
+
+kafka:
+  brokers: "kafka:9092"
+  input_topic: "transactions"
+  fraud_output_topic: "fraud_predictions"
+  legit_output_topic: "legit_predictions"
+  group_id: "fraud-detection-inference"
+  max_offsets_per_trigger: 1000
+
+redis:
+  host: "redis"
+  port: 6379
+  db: 0
+  password: null
+  max_connections: 50
+  socket_timeout: 5
+  velocity_ttl: 604800  # 7 days
+  ato_baseline_ttl: 2592000  # 30 days
+
+model:
+  model_bundle_path: "../models/fraud_detection_model.pkl"
+  feature_pipeline_path: "../models/feature_pipeline.pkl"
+
+  # IMPORTANT: These thresholds are based on training F1-optimal = 0.0564
+  # NOT the typical 0.5/0.7/0.9 scale
+  base_threshold: 0.0564      # F1-optimal from training
+  approve_threshold: 0.0564   # prob < base → APPROVE
+  review_threshold: 0.10      # base ≤ prob < 0.10 → REVIEW
+  hold_threshold: 0.20        # 0.10 ≤ prob < 0.20 → HOLD
+  block_threshold: 0.20       # prob ≥ 0.20 → BLOCK
+
+threshold_weights:
+  # Weights for adaptive threshold: [w_base, w_velocity, w_amount, w_ato]
+  high_ato: [0.1, 0.2, 0.1, 0.6]
+  high_velocity: [0.2, 0.5, 0.2, 0.1]
+  high_amount: [0.2, 0.2, 0.5, 0.1]
+  normal: [0.6, 0.2, 0.1, 0.1]
+
+velocity:
+  # Transaction count thresholds
+  high_1h_count: 5
+  high_6h_count: 15
+  high_24h_count: 30
+
+  # Amount spike multipliers
+  amount_spike_3x: 3.0
+  amount_spike_5x: 5.0
+
+  # Risk thresholds
+  velocity_risk_threshold: 0.8
+  amount_risk_threshold: 0.8
+
+ato:
+  # Distance threshold (km)
+  geo_anomaly_distance: 1000.0
+
+  # Risk weights (sum to compute ato_risk)
+  geo_anomaly_weight: 0.30
+  new_address_ip_weight: 0.20
+  email_mismatch_weight: 0.35
+  high_amount_weight: 0.15
+  unusual_card_weight: 0.10
+
+  # High amount threshold
+  high_amount_threshold: 2000.0
+
+  # ATO detection threshold
+  ato_detection_threshold: 0.6
+
+  # Risky email domains
+  risky_email_domains:
+    - "anonymous.com"
+    - "mailinator.com"
+    - "tempmail.com"
+    - "dispostable.com"
+    - "yopmail.com"
+    - "10minutemail.com"
+    - "guerrillamail.com"
+    - "protonmail.com"
+    - "sharklasers.com"
+    - "guerrillamail.info"
+    - "trashmail.com"
+
+spark:
+  app_name: "FraudDetectionInference"
+  checkpoint_location: "/tmp/spark-checkpoints/fraud-detection"
+  trigger_interval: "5 seconds"
+  shuffle_partitions: 200
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
