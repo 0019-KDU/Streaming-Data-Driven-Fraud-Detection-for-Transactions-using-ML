@@ -19,7 +19,7 @@ redis:
   ato_baseline_ttl: 2592000  # 30 days
 
 model:
-  model_bundle_path: "../models/fraud_detection_model.pkl"
+  model_bundle_path: "../models/fraud_detection_xgboost_model.pkl"
   feature_pipeline_path: "../models/feature_pipeline.pkl"
 
   # IMPORTANT: These thresholds are based on training F1-optimal = 0.0564
