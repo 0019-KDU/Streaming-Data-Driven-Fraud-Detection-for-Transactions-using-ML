@@ -6,6 +6,9 @@ import json
 
 print("Loading model and pipeline...")
 # Load model - try different possible paths and names
+import dill
+import gzip
+
 model_paths = [
     '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/fraud_detection_model.pkl',
     '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/xgboost_fraud_model.pkl',
@@ -15,20 +18,60 @@ model_paths = [
 
 model = None
 for model_path in model_paths:
+    if model is not None:
+        break
     try:
-        with open(model_path, 'rb') as f:
-            model_data = pickle.load(f)
-            model = model_data['model']
-            feature_names = model_data['feature_names']
-            print(f"✅ Model loaded from: {model_path}")
-            break
+        # Try regular pickle
+        try:
+            with open(model_path, 'rb') as f:
+                model_data = pickle.load(f)
+                model = model_data['model']
+                feature_names = model_data['feature_names']
+                print(f"✅ Model loaded with pickle from: {model_path}")
+                break
+        except (pickle.UnpicklingError, KeyError):
+            pass
+        
+        # Try dill
+        try:
+            with open(model_path, 'rb') as f:
+                model_data = dill.load(f)
+                model = model_data['model']
+                feature_names = model_data['feature_names']
+                print(f"✅ Model loaded with dill from: {model_path}")
+                break
+        except (Exception,):
+            pass
+        
+        # Try gzipped pickle
+        try:
+            with gzip.open(model_path, 'rb') as f:
+                model_data = pickle.load(f)
+                model = model_data['model']
+                feature_names = model_data['feature_names']
+                print(f"✅ Model loaded with gzip+pickle from: {model_path}")
+                break
+        except (Exception,):
+            pass
+            
     except FileNotFoundError:
         continue
 
 if model is None:
-    print("❌ Model file not found. Please check models directory:")
-    print("   Run: ls -la /home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/")
-    sys.exit(1)
+    print("❌ Could not load model. Trying to load directly from inference container...")
+    # Try loading from the inference service's loaded model
+    try:
+        import sys
+        sys.path.insert(0, '/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/inference')
+        from model_loader import load_model
+        model_data = load_model('/home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/fraud_detection_model.pkl')
+        model = model_data['model']
+        feature_names = model_data['feature_names']
+        print("✅ Model loaded using model_loader.py")
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
+        print("   Run: ls -la /home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/models/")
+        sys.exit(1)
 
 print(f"Model loaded with {len(feature_names)} features")
 print(f"Threshold: {model_data.get('threshold', 0.05639991909265518)}")
