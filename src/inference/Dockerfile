@@ -50,7 +50,7 @@ WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
+# Install Python dependencies (includes deps for ieee_cis_training module)
 RUN pip install --no-cache-dir \
     redis==4.5.4 \
     pandas==1.5.3 \
@@ -60,6 +60,8 @@ RUN pip install --no-cache-dir \
     joblib==1.2.0 \
     dill==0.3.6 \
     mlflow==2.9.2 \
+    matplotlib==3.7.1 \
+    seaborn==0.12.2 \
     pyyaml==6.0 \
     confluent-kafka==2.3.0 \
     pyarrow==14.0.1
