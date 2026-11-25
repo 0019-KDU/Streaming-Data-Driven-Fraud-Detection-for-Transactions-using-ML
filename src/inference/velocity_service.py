@@ -13,6 +13,7 @@ Key Features:
 
 import json
 import time
+import uuid
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -188,7 +189,7 @@ class VelocityService:
                 key_1h, min_time_1h, timestamp, withscores=False
             )
             if amounts_1h:
-                amounts_1h = [float(amt) for amt in amounts_1h]
+                amounts_1h = [self._member_amount(m) for m in amounts_1h]
                 amt_sum_1h = sum(amounts_1h)
             else:
                 amt_sum_1h = 0.0
@@ -205,7 +206,7 @@ class VelocityService:
                 key_24h, min_time_24h, timestamp, withscores=False
             )
             if amounts_24h:
-                amounts_24h = [float(amt) for amt in amounts_24h]
+                amounts_24h = [self._member_amount(m) for m in amounts_24h]
                 amt_sum_24h = sum(amounts_24h)
                 amt_mean_24h = amt_sum_24h / len(amounts_24h)
             else:
@@ -218,6 +219,13 @@ class VelocityService:
         
         return amt_sum_1h, amt_sum_24h, amt_mean_24h
     
+    @staticmethod
+    def _member_amount(member) -> float:
+        """Parse the amount from an '<event_id>:<amount>' member (legacy: '<amount>')."""
+        if isinstance(member, bytes):
+            member = member.decode()
+        return float(str(member).rsplit(':', 1)[-1])
+
     def _calculate_velocity_risk(self, counts: Dict[str, int]) -> float:
         """
         Calculate velocity risk score [0, 1].
@@ -336,23 +344,30 @@ class VelocityService:
                 logger.warning(f"Invalid amount value: {amount}, skipping velocity recording")
                 return
                 
+            # Sorted-set members must be unique per event: keying by amount or by
+            # timestamp alone collapses repeated $50 payments (or same-second
+            # events) into one entry and undercounts velocity.
+            event_id = uuid.uuid4().hex
+            amount_member = f"{event_id}:{amount}"
+
             # Record transaction timestamp
             txn_key = f"velocity:{card_id}:{user_id}:txns"
-            self.redis.zadd(txn_key, {str(timestamp): timestamp})
+            self.redis.zadd(txn_key, {event_id: timestamp})
             self.redis.expire(txn_key, self.ttl)
-            
+
             # Record amounts for 1h and 24h windows
             amt_key_1h = f"velocity:{card_id}:{user_id}:amounts:1h"
-            self.redis.zadd(amt_key_1h, {str(amount): timestamp})
+            self.redis.zadd(amt_key_1h, {amount_member: timestamp})
             self.redis.expire(amt_key_1h, 7200)  # 2 hours TTL
-            
+
             amt_key_24h = f"velocity:{card_id}:{user_id}:amounts:24h"
-            self.redis.zadd(amt_key_24h, {str(amount): timestamp})
+            self.redis.zadd(amt_key_24h, {amount_member: timestamp})
             self.redis.expire(amt_key_24h, 86400 * 2)  # 2 days TTL
-            
-            # Clean old entries (beyond 7d window)
-            min_time_7d = timestamp - self.windows['7d']
-            self.redis.zremrangebyscore(txn_key, 0, min_time_7d)
+
+            # Clean old entries beyond each window
+            self.redis.zremrangebyscore(txn_key, 0, timestamp - self.windows['7d'])
+            self.redis.zremrangebyscore(amt_key_1h, 0, timestamp - self.windows['1h'])
+            self.redis.zremrangebyscore(amt_key_24h, 0, timestamp - self.windows['24h'])
             
         except redis.RedisError as e:
             logger.error(f"Redis error recording transaction: {e}")

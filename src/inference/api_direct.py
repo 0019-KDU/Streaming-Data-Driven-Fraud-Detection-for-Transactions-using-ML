@@ -1,27 +1,31 @@
 """
-Direct Fraud Detection API - For Testing and Demo
+Synchronous fraud scoring API: the authorization path.
 
-This provides a synchronous REST API that directly invokes the ML model
-without going through Kafka/Spark. Useful for:
-- Quick testing
-- Demos
-- Debugging model behavior
+POST /predict   decision + reasons for one transaction (same FraudScorer as Spark)
+POST /feedback  confirmed outcome (chargeback / analyst) for a past transaction
+GET  /health    liveness, model status
 
-Endpoint: POST /predict
+Production behaviour:
+- API-key auth (header X-API-Key, keys in SCORING_API_KEYS)
+- latency budget (SCORING_TIMEOUT_MS): if the model misses it or fails, the API
+  answers with a rules-only decision marked `degraded` instead of failing the
+  payment (fallback policy FALLBACK_MODE = review | approve)
+- idempotent: retrying the same TransactionID returns the original decision
 """
 
-import json
+import asyncio
 import logging
 import os
 import sys
+import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi.concurrency import run_in_threadpool
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import pandas as pd
-import numpy as np
 
 # Add parent directory to path
 sys.path.insert(0, '/app')
@@ -31,12 +35,9 @@ dags_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 sys.path.insert(0, dags_path)
 
 from inference.config import Config
-from inference.model_loader import ModelLoader
-from inference.velocity_service import VelocityService
-from inference.ato_service import ATOService
 from inference.decision_engine import HybridDecisionEngine
-from inference.utils.redis_client import get_redis_client
-import joblib
+from inference.scoring import FraudScorer, connect_redis_or_none, rules_only_decision
+from inference.security import is_authorized, load_keys
 
 # Configure logging
 logging.basicConfig(
@@ -48,11 +49,10 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(
     title="Direct Fraud Detection API",
-    description="Synchronous fraud detection API for testing and demos",
-    version="1.0.0"
+    description="Synchronous fraud scoring (authorization path). Uses the same FraudScorer as the Spark job.",
+    version="1.1.0"
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,103 +61,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global services (initialized once)
-config = None
-model_loader = None
-feature_pipeline = None
-velocity_service = None
-ato_service = None
-decision_engine = None
+scorer: Optional[FraudScorer] = None
+fallback_engine: Optional[HybridDecisionEngine] = None
+API_KEYS = load_keys()
+SCORING_TIMEOUT_S = float(os.getenv("SCORING_TIMEOUT_MS", "300")) / 1000.0
+# Anything other than an explicit "approve" fails SAFE (review), never open
+FALLBACK_MODE = "approve" if os.getenv("FALLBACK_MODE", "review").strip().lower() == "approve" else "review"
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-# Mock services for when Redis is unavailable
-class MockVelocityResult:
-    """Mock velocity result with zero risk"""
-    def __init__(self):
-        self.velocity_risk = 0.0
-        self.amount_risk = 0.0
-        self.factors = []
-
-
-class MockATOResult:
-    """Mock ATO result with zero risk"""
-    def __init__(self):
-        self.ato_risk = 0.0
-        self.ato_detected = False
-        self.factors = []
-
-
-class MockVelocityService:
-    """Mock velocity service when Redis unavailable"""
-    def check_velocity(self, card1, uid, amount, timestamp):
-        return MockVelocityResult()
-
-
-class MockATOService:
-    """Mock ATO service when Redis unavailable"""
-    def check_ato(self, card1, transaction):
-        return MockATOResult()
+def require_api_key(key: Optional[str] = Security(_api_key_header)) -> None:
+    if not is_authorized(key, API_KEYS):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid X-API-Key")
 
 
 def initialize_services():
-    """Initialize all services once at startup"""
-    global config, model_loader, feature_pipeline, velocity_service, ato_service, decision_engine
-    
+    """Load the model once at startup; if it cannot load, serve rules-only (degraded) decisions."""
+    global scorer, fallback_engine
+    config = Config.load()
+    fallback_engine = HybridDecisionEngine(config, {})
+    if not API_KEYS:
+        logger.warning("SCORING_API_KEYS is empty: the API is OPEN (development only)")
     try:
-        logger.info("Initializing fraud detection services...")
-        
-        # Load config
-        config = Config.load()
-        logger.info("✅ Config loaded")
-        
-        # Initialize Redis (optional - use mock if unavailable)
-        try:
-            redis_client = get_redis_client(config)
-            logger.info("✅ Redis connected")
-        except Exception as redis_error:
-            logger.warning(f"⚠️  Redis unavailable: {redis_error}")
-            logger.warning("⚠️  Using mock Redis client (velocity/ATO features disabled)")
-            redis_client = None
-        
-        # Load model
-        model_loader = ModelLoader(config)
-        model_loader.load()
-        model_metadata = model_loader.get_metadata()
-        logger.info(f"✅ Model loaded: {model_metadata.get('threshold', 0.0):.4%} threshold")
-        
-        # Load feature pipeline directly from pickle file
-        pipeline_path = config.model.feature_pipeline_path
-        logger.info(f"Loading feature pipeline from: {pipeline_path}")
-        feature_pipeline = joblib.load(pipeline_path)
-        logger.info("✅ Feature pipeline loaded")
-        
-        # Initialize services (with mock redis if needed)
-        if redis_client:
-            velocity_service = VelocityService(redis_client, config)
-            ato_service = ATOService(redis_client, config)
-            logger.info("✅ Services initialized with Redis")
-        else:
-            # Create mock services that return zero risk
-            velocity_service = MockVelocityService()
-            ato_service = MockATOService()
-            logger.info("✅ Services initialized with mock (Redis unavailable)")
-        
-        decision_engine = HybridDecisionEngine(config, model_metadata)
-        logger.info("✅ Decision engine initialized")
-        
-        logger.info("="*80)
-        logger.info("🚀 Direct Fraud Detection API Ready!")
-        logger.info("="*80)
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize services: {e}")
-        raise
+        scorer = FraudScorer(config, connect_redis_or_none(config))
+        logger.info(
+            f"Scoring API ready (redis={'on' if scorer.redis_enabled else 'off'}, "
+            f"model={scorer.metadata.get('model_version')}, budget={SCORING_TIMEOUT_S * 1000:.0f} ms, "
+            f"fallback={FALLBACK_MODE})"
+        )
+    except Exception as exc:  # noqa: BLE001 - keep answering with rules only
+        scorer = None
+        logger.error(f"Model failed to load ({exc}); serving DEGRADED rules-only decisions")
 
 
 # Request/Response models
 class PredictRequest(BaseModel):
     """Transaction prediction request"""
-    TransactionID: Optional[int] = None
+    TransactionID: Optional[Any] = None
     TransactionDT: Optional[float] = None
     TransactionAmt: float = Field(..., gt=0)
     ProductCD: Optional[str] = "W"
@@ -178,7 +118,7 @@ class PredictRequest(BaseModel):
 
 class PredictResponse(BaseModel):
     """Prediction response"""
-    transaction_id: Optional[int] = None
+    transaction_id: Optional[Any] = None
     fraud_probability: float
     decision: str
     risk_level: str
@@ -190,11 +130,26 @@ class PredictResponse(BaseModel):
     hybrid_threshold: float
     processing_time_ms: float
     timestamp: str
+    explanation: List[str] = []
+    model_kind: str = ""
+    model_version: str = ""
+    rules_version: str = ""
+    shadow_probability: float = -1.0
+    degraded: bool = False   # True = model unavailable/too slow, rules-only decision
+    replayed: bool = False   # True = TransactionID already scored, original decision returned
     # Original transaction fields
     TransactionAmt: float
     card1: str
     P_emaildomain: str
     ProductCD: str
+
+
+class FeedbackRequest(BaseModel):
+    """A confirmed outcome for a past transaction (chargeback or analyst decision)."""
+    transaction_id: Optional[str] = None
+    terminal_id: str
+    tx_datetime: str = Field(..., description="ISO-8601 time of the ORIGINAL transaction")
+    is_fraud: bool
 
 
 @app.on_event("startup")
@@ -209,137 +164,69 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "direct-fraud-detection-api",
-        "model_loaded": model_loader is not None,
+        "model_loaded": scorer is not None,
+        "mode": "normal" if scorer is not None else "degraded_rules_only",
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post("/predict", response_model=PredictResponse, dependencies=[Depends(require_api_key)])
 async def predict_fraud(request: PredictRequest):
-    """
-    Predict fraud probability for a transaction
-    
-    Args:
-        request: Transaction data (IEEE-CIS format)
-        
-    Returns:
-        PredictResponse with fraud probability and decision
-    """
-    import time
+    """Score one transaction synchronously and return the decision with reason codes."""
     start_time = time.time()
-    
-    try:
-        # Convert request to dict
-        transaction = request.dict()
-        transaction_id = transaction.get('TransactionID') or f"TXN_{int(time.time())}"
-        
-        logger.info(f"Processing transaction: {transaction_id}")
-        logger.info(f"  Amount: ${transaction.get('TransactionAmt', 0):.2f}")
-        logger.info(f"  Card: {transaction.get('card1', 'N/A')}")
-        logger.info(f"  Email: {transaction.get('P_emaildomain', 'N/A')}")
-        
-        # 1. Feature engineering
-        logger.info("Step 1: Feature engineering...")
+    payload = request.dict()
+
+    result = None
+    if scorer is not None:
         try:
-            # ✅ FIX #2: Ensure TransactionAmt is properly converted to float
-            transaction['TransactionAmt'] = float(transaction.get('TransactionAmt', 0.0))
-            
-            # Transform using the loaded feature pipeline
-            features_df = feature_pipeline.transform(
-                pd.DataFrame([transaction])
-            )
-            logger.info(f"  Engineered {len(features_df.columns)} features")
-        except Exception as e:
-            logger.error(f"  ❌ Feature engineering failed: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Feature engineering error: {str(e)}"
-            )
-        
-        # 2. ML model prediction
-        logger.info("Step 2: ML prediction...")
-        try:
-            fraud_prob = float(model_loader.predict(features_df)[0])
-            logger.info(f"  Fraud probability: {fraud_prob:.4%}")
-            
-            # ✅ FIX #3: Check if probability is suspiciously low
-            if fraud_prob < 0.0001 and transaction.get('P_emaildomain', '').lower() in ['yopmail.com', 'tempmail.com', 'guerrillamail.com']:
-                logger.warning("⚠️  Suspiciously low probability for disposable email!")
-                logger.warning("  This suggests feature engineering may not be working correctly")
-                
-        except Exception as e:
-            logger.error(f"  ❌ Model prediction failed: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Model prediction error: {str(e)}"
-            )
-        
-        # 3. Velocity analysis
-        logger.info("Step 3: Velocity analysis...")
-        card1 = str(transaction.get('card1', 'unknown'))
-        uid = f"{card1}_{transaction.get('addr1', 'na')}_{transaction.get('P_emaildomain', 'na')}"
-        amount = float(transaction.get('TransactionAmt', 0.0))
-        timestamp = float(transaction.get('TransactionDT', time.time()))
-        
-        velocity_result = velocity_service.check_velocity(
-            card1, uid, amount, timestamp
-        )
-        logger.info(f"  Velocity risk: {velocity_result.velocity_risk:.2f}")
-        logger.info(f"  Amount risk: {velocity_result.amount_risk:.2f}")
-        
-        # 4. ATO analysis
-        logger.info("Step 4: ATO analysis...")
-        ato_result = ato_service.check_ato(card1, transaction)
-        logger.info(f"  ATO risk: {ato_result.ato_risk:.2f}")
-        
-        # 5. Final decision
-        logger.info("Step 5: Final decision...")
-        decision_result = decision_engine.make_decision(
-            fraud_probability=fraud_prob,
-            velocity_risk=velocity_result.velocity_risk,
-            amount_risk=velocity_result.amount_risk,
-            ato_risk=ato_result.ato_risk,
-            ato_detected=ato_result.ato_detected,
-            transaction_data=transaction,
-            velocity_factors=velocity_result.factors,
-            ato_factors=ato_result.factors
-        )
-        
-        logger.info(f"  Decision: {decision_result.decision.value}")
-        logger.info(f"  Risk level: {decision_result.risk_level.value}")
-        logger.info(f"  Hybrid threshold: {decision_result.hybrid_threshold:.4%}")
-        
-        processing_time_ms = (time.time() - start_time) * 1000
-        logger.info(f"✅ Processing completed in {processing_time_ms:.2f}ms")
-        
-        # Build response
-        return PredictResponse(
-            transaction_id=transaction_id,
-            fraud_probability=fraud_prob,
-            decision=decision_result.decision.value,
-            risk_level=decision_result.risk_level.value,
-            risk_factors=decision_result.risk_factors,
-            velocity_risk=velocity_result.velocity_risk,
-            amount_risk=velocity_result.amount_risk,
-            ato_risk=ato_result.ato_risk,
-            base_threshold=decision_engine.base_threshold,
-            hybrid_threshold=decision_result.hybrid_threshold,
-            processing_time_ms=round(processing_time_ms, 2),
-            timestamp=datetime.utcnow().isoformat() + 'Z',
-            TransactionAmt=amount,
-            card1=str(transaction.get('card1', 'N/A')),
-            P_emaildomain=str(transaction.get('P_emaildomain', 'N/A')),
-            ProductCD=str(transaction.get('ProductCD', 'W'))
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Prediction failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Prediction error: {str(e)}"
-        )
+            result = await asyncio.wait_for(run_in_threadpool(scorer.score_one, payload), SCORING_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.error(f"Scoring exceeded {SCORING_TIMEOUT_S * 1000:.0f} ms budget; rules-only fallback")
+            result = rules_only_decision(fallback_engine, payload, FALLBACK_MODE, "timeout")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Scoring failed: {e}; rules-only fallback", exc_info=True)
+            result = rules_only_decision(fallback_engine, payload, FALLBACK_MODE, "model_error")
+    if result is None:
+        result = rules_only_decision(fallback_engine, payload, FALLBACK_MODE, "model_unavailable")
+
+    tid = request.TransactionID
+    return PredictResponse(
+        transaction_id=tid,
+        fraud_probability=result['fraud_probability'],
+        decision=result['decision'],
+        risk_level=result['risk_level'],
+        risk_factors=[f for f in result['risk_factors'].split(',') if f],
+        velocity_risk=result['velocity_risk'],
+        amount_risk=result['amount_risk'],
+        ato_risk=result['ato_risk'],
+        base_threshold=result['base_threshold'],
+        hybrid_threshold=result['hybrid_threshold'],
+        processing_time_ms=round((time.time() - start_time) * 1000, 2),
+        timestamp=result['timestamp'],
+        explanation=[e for e in result['explanation'].split(' | ') if e],
+        model_kind=result['model_kind'],
+        model_version=result['model_version'],
+        rules_version=result['rules_version'],
+        shadow_probability=result['shadow_probability'],
+        degraded=bool(result.get('degraded', False)),
+        replayed=bool(result.get('replayed', False)),
+        TransactionAmt=result['TransactionAmt'],
+        card1=result['card1'],
+        P_emaildomain=result['P_emaildomain'],
+        ProductCD=result['ProductCD'],
+    )
+
+
+@app.post("/feedback", dependencies=[Depends(require_api_key)])
+async def record_feedback(feedback: FeedbackRequest):
+    """
+    Label feedback loop: confirmed frauds update the terminal-risk features used
+    by later decisions (and become training labels at the next retrain).
+    """
+    if scorer is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    scorer.record_feedback(feedback.terminal_id, feedback.tx_datetime, feedback.is_fraud)
+    return {"status": "recorded", "transaction_id": feedback.transaction_id}
 
 
 if __name__ == "__main__":

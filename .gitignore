@@ -3,16 +3,17 @@ __pycache__/
 *.py[cod]
 *.swp
 *.swo
+.pytest_cache/
 
 # Virtual environment
 venv/
+.venv/
 
-# Environment variables (CRITICAL: Never commit credentials!)
+# Environment variables (never commit credentials; use src/.env.example as the template)
 .env
 .env.*
 *.env
-src/.env
-src/config.yaml
+!.env.example
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
@@ -21,18 +22,17 @@ src/config.yaml
 *.log
 *.tmp
 .DS_Store
+src/logs/
 
-# Configuration files with credentials (use .example templates instead)
-config.yaml
-src/config.yaml
-
-# IDE and editor settings
+# IDE, editor and local tool settings
 .vscode/
 .idea/
+.claude/settings.local.json
+
+# Data
 data
 ieee-fraud-detection/*.csv
+kafka_transactions.csv
 
-# Large Model Artifacts
+# Large model artifacts (produced by the Airflow training DAG)
 *.pkl
-src/inference/agg_maps.pkl
-src/models/fraud_detection_model.pkl

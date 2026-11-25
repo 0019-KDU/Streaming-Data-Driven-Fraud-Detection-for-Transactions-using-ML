@@ -59,8 +59,8 @@ class ModelConfig:
     # Decision thresholds (using proper scale)
     approve_threshold: float = 0.0564  # < base_threshold
     review_threshold: float = 0.10     # τ_base ≤ prob < 0.10
-    hold_threshold: float = 0.20       # 0.10 ≤ prob < 0.20
-    block_threshold: float = 0.20      # prob ≥ 0.20
+    hold_threshold: float = 0.20       # 0.20 ≤ prob < 0.30
+    block_threshold: float = 0.30      # prob ≥ 0.30
 
 
 @dataclass
@@ -117,6 +117,22 @@ class ATOConfig:
 
 
 @dataclass
+class RulesConfig:
+    """Declarative rule file (hot-reloaded)."""
+    path: str = ""                 # empty = rules.yaml next to rule_engine.py
+    reload_interval: float = 5.0   # seconds between file-change checks
+
+
+@dataclass
+class ServingConfig:
+    """Optional serving features."""
+    # Postgres DSN for the decision audit log; empty disables it
+    decision_log_dsn: str = ""
+    # Challenger bundle scored in shadow mode (logged, never acted on); empty disables it
+    shadow_model_bundle_path: str = ""
+
+
+@dataclass
 class SparkConfig:
     """Spark configuration."""
     app_name: str = "FraudDetectionInference"
@@ -144,6 +160,8 @@ class Config:
     ato: ATOConfig = field(default_factory=ATOConfig)
     spark: SparkConfig = field(default_factory=SparkConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    rules: RulesConfig = field(default_factory=RulesConfig)
+    serving: ServingConfig = field(default_factory=ServingConfig)
 
     @classmethod
     def load(cls, config_path: Optional[str] = None) -> 'Config':
@@ -161,10 +179,14 @@ class Config:
         """
         config = cls()
 
-        # Try to find config.yaml
+        # Try to find the *inference* config.yaml. The module-local file comes first:
+        # in Docker the working directory is /app, where ./config.yaml is the
+        # training config (different schema), which previously shadowed this one.
+        if config_path is None:
+            config_path = os.getenv("INFERENCE_CONFIG_PATH")
         if config_path is None:
             possible_paths = [
-                Path("config.yaml"),
+                Path(__file__).resolve().parent / "config.yaml",
                 Path("src/inference/config.yaml"),
                 Path("/app/config/config.yaml"),
             ]
@@ -231,6 +253,11 @@ class Config:
                 if hasattr(self.spark, key):
                     setattr(self.spark, key, value)
 
+        for section in ('rules', 'serving'):
+            for key, value in (yaml_config.get(section) or {}).items():
+                if hasattr(getattr(self, section), key):
+                    setattr(getattr(self, section), key, value)
+
         # Logging
         if 'logging' in yaml_config:
             for key, value in yaml_config['logging'].items():
@@ -266,6 +293,12 @@ class Config:
 
         # Spark
         self.spark.checkpoint_location = os.getenv('SPARK_CHECKPOINT', self.spark.checkpoint_location)
+
+        # Rules / serving extras
+        self.rules.path = os.getenv('RULES_PATH', self.rules.path)
+        self.serving.decision_log_dsn = os.getenv('DECISION_LOG_DSN', self.serving.decision_log_dsn)
+        self.serving.shadow_model_bundle_path = os.getenv(
+            'SHADOW_MODEL_BUNDLE_PATH', self.serving.shadow_model_bundle_path)
 
         # Logging
         self.logging.level = os.getenv('LOG_LEVEL', self.logging.level)

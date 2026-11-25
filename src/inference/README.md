@@ -11,16 +11,25 @@ src/inference/
 ├── config.yaml                    # Default configuration
 ├── schema.py                      # Spark schemas for IEEE-CIS transactions
 ├── model_loader.py                # LightGBM/XGBoost model + pipeline loader
-├── feature_pipeline_spark.py      # Feature engineering (88 features)
+├── scoring.py                     # FraudScorer: features → model → velocity/ATO → decision (shared)
+├── feature_store.py               # Redis store for decision-time features (twin of MemoryStore)
+├── rule_engine.py, rules.yaml     # Declarative, hot-reloaded rules (REVIEW / BLOCK)
+├── explanations.py                # Reason codes → human-readable sentences (templates only)
+├── audit_log.py                   # Async decision log → Postgres decision_log
 ├── velocity_service.py            # Redis-based velocity tracking
 ├── ato_service.py                 # Redis-based ATO detection
 ├── decision_engine.py             # Hybrid adaptive threshold + final decision
-├── main_inference.py              # Spark Structured Streaming entry point
+├── main_inference.py              # Spark Structured Streaming entry point (async monitoring path)
+├── api_direct.py                  # FastAPI POST /predict (synchronous authorization path)
 ├── logging_utils.py               # Standardized logging
 └── utils/
     ├── __init__.py
     └── redis_client.py            # Shared Redis connection pool
 ```
+
+Feature code is shared with training and lives in `src/dags/`:
+- `decision_time_features.py`: features of the **live** model (computable at authorization time)
+- `feature_pipeline.py`: features of the IEEE-CIS **benchmark** model (pickled artifacts reference it by name)
 
 ## 🚀 Quick Start
 

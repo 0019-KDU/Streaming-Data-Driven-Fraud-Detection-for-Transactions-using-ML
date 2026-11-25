@@ -107,6 +107,10 @@ class ATOService:
         Returns:
             ATOResult with risk scores and factors
         """
+        # Accept raw IEEE-CIS payloads (P_emaildomain, TransactionAmt, card4/card6,
+        # DeviceInfo, DeviceType) as well as the internal field names.
+        transaction_data = self.normalize_transaction(transaction_data)
+
         # Get baseline for this card
         baseline = self._get_baseline(card_id)
         
@@ -151,6 +155,39 @@ class ATOService:
             amount_anomaly=amount_anomaly
         )
     
+    @staticmethod
+    def normalize_transaction(transaction_data: Dict) -> Dict:
+        """
+        Map raw IEEE-CIS field names onto the names the ATO checks use.
+
+        Internal names already present are kept; None/NaN values are dropped so
+        that missing fields are treated as "not provided" rather than as "None".
+        """
+        def present(value) -> bool:
+            return value is not None and not (isinstance(value, float) and value != value)
+
+        aliases = {
+            'email_domain': ['email_domain', 'P_emaildomain'],
+            'amount': ['amount', 'TransactionAmt'],
+            'card_type': ['card_type', 'card6', 'card4'],
+            'device_info': ['device_info', 'DeviceInfo'],
+            'device_type': ['device_type', 'DeviceType'],
+        }
+
+        normalized = {k: v for k, v in transaction_data.items() if present(v)}
+        for target, sources in aliases.items():
+            for source in sources:
+                if present(transaction_data.get(source)):
+                    normalized[target] = transaction_data[source]
+                    break
+
+        if 'amount' in normalized:
+            try:
+                normalized['amount'] = float(normalized['amount'])
+            except (TypeError, ValueError):
+                normalized.pop('amount')
+        return normalized
+
     def _get_baseline(self, card_id: str) -> Dict:
         """Get baseline behavior profile for card from Redis."""
         key = f"ato:baseline:{card_id}"

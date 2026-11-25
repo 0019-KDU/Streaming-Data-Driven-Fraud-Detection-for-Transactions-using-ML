@@ -1,4 +1,4 @@
-FROM apache/airflow:2.10.5
+FROM apache/airflow:2.10.5-python3.10
 
 # Install system dependencies for ML libraries
 USER root

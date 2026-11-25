@@ -51,8 +51,9 @@ WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies (includes ALL deps for ieee_cis_training module)
-# LightGBM 4.1.0 as primary, XGBoost for compatibility
+# Python dependencies for both serving entry points:
+#   main_inference.py (Spark streaming) and api_direct.py (FastAPI sync scoring)
+# dill is required to unpickle older model bundles.
 RUN pip install --no-cache-dir \
     redis==4.5.4 \
     pandas==1.5.3 \
@@ -61,27 +62,23 @@ RUN pip install --no-cache-dir \
     scikit-learn==1.2.2 \
     lightgbm==4.1.0 \
     xgboost==2.0.3 \
-    catboost==1.2 \
-    imbalanced-learn==0.11.0 \
     joblib==1.2.0 \
     dill==0.3.6 \
-    mlflow==2.9.2 \
-    matplotlib==3.7.1 \
-    seaborn==0.12.2 \
     pyyaml==6.0 \
+    pyarrow==14.0.1 \
     confluent-kafka==2.3.0 \
-    pyarrow==14.0.1
+    fastapi==0.115.0 \
+    uvicorn==0.32.0 \
+    pydantic==2.10.0 \
+    psycopg2-binary==2.9.9
 
 # Copy inference code
-COPY inference/__init__.py /app/src/inference/
-COPY inference/config.py /app/src/inference/
-COPY inference/config.yaml /app/src/inference/
-COPY inference/schema.py /app/src/inference/
-COPY inference/logging_utils.py /app/src/inference/
-COPY inference/model_loader.py /app/src/inference/
-COPY inference/feature_pipeline_spark.py /app/src/inference/
-COPY inference/main_inference.py /app/src/inference/
-COPY inference/utils/ /app/src/inference/utils/
+COPY inference/ /app/src/inference/
+
+# Shared ML code (feature pipeline, decision-time features, training module):
+# the pickled artifacts reference `feature_pipeline` and `ieee_cis_training` by
+# module name, so the exact code used in training must be importable here.
+COPY dags/ /app/src/dags/
 
 # Stage 2: Runtime stage
 FROM python:3.10.16-slim-bookworm as runtime

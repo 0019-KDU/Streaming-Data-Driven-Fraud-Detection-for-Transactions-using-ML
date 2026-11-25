@@ -16,6 +16,7 @@ from datetime import datetime
 from collections import deque
 from typing import Dict, List, Any
 
+import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -146,6 +147,26 @@ if 'ato_incidents' not in st.session_state:
 
 # ===== Helper Functions =====
 
+def normalize_prediction(data: Dict[str, Any], msg_type: str) -> Dict[str, Any]:
+    """
+    Map the inference output schema onto the field names the dashboard widgets use.
+
+    Inference publishes fraud_probability / TransactionAmt / card1 / ato_risk;
+    several panels read probability / amount / user_id / ato_risk_score.
+    """
+    data['type'] = msg_type
+    data.setdefault('probability', data.get('fraud_probability', 0.0))
+    data.setdefault('amount', float(data.get('TransactionAmt') or 0.0))
+    data.setdefault('user_id', data.get('card1', 'N/A'))
+    data.setdefault('ato_risk_score', data.get('ato_risk', 0.0))
+    data.setdefault('ato_confidence', data.get('ato_risk', 0.0))
+    data.setdefault('behavioral_velocity', data.get('velocity_risk', 0.0))
+    if isinstance(data.get('risk_factors'), list):
+        data['risk_factors'] = ','.join(data['risk_factors'])
+    data.setdefault('risk_factors', '')
+    return data
+
+
 def consume_messages(fraud_consumer, legit_consumer, max_messages=50):
     """
     Consume messages from both Kafka topics
@@ -169,8 +190,7 @@ def consume_messages(fraud_consumer, legit_consumer, max_messages=50):
         if not msg.error():
             try:
                 data = json.loads(msg.value().decode('utf-8'))
-                data['type'] = 'FRAUD'
-                fraud_messages.append(data)
+                fraud_messages.append(normalize_prediction(data, 'FRAUD'))
             except Exception as e:
                 logger.error(f"Error parsing fraud message: {e}")
 
@@ -182,8 +202,7 @@ def consume_messages(fraud_consumer, legit_consumer, max_messages=50):
         if not msg.error():
             try:
                 data = json.loads(msg.value().decode('utf-8'))
-                data['type'] = 'LEGIT'
-                legit_messages.append(data)
+                legit_messages.append(normalize_prediction(data, 'LEGIT'))
             except Exception as e:
                 logger.error(f"Error parsing legit message: {e}")
 
@@ -234,6 +253,7 @@ def format_transaction_row(txn: Dict[str, Any]) -> Dict[str, Any]:
         'Email': email_domain[:20] if email_domain else 'N/A',
         'Product': product,
         'Alerts': f"{ato_badge} {velocity_badge} {email_badge}".strip() or '—',
+        'Why': txn.get('explanation', '') or '—',
         'Risk Factors': risk_factors[:80] + '...' if len(risk_factors) > 80 else risk_factors
     }
 
@@ -277,6 +297,58 @@ def update_model_stats(transactions: List[Dict[str, Any]]):
             st.session_state.model_stats['avg_confidence'] * 0.9 + 
             (total_prob / count) * 0.1
         )
+
+
+def population_stability_index(expected: List[float], actual: List[float], bins: int = 10) -> float:
+    """PSI of `actual` scores against `expected` scores using expected-quantile bins."""
+    edges = np.unique(np.quantile(expected, np.linspace(0, 1, bins + 1)))
+    if len(edges) < 3:
+        return 0.0
+    e = np.histogram(np.clip(expected, edges[0], edges[-1]), bins=edges)[0] / len(expected)
+    a = np.histogram(np.clip(actual, edges[0], edges[-1]), bins=edges)[0] / len(actual)
+    e, a = np.clip(e, 1e-4, None), np.clip(a, 1e-4, None)
+    return float(np.sum((a - e) * np.log(a / e)))
+
+
+def render_model_monitoring(transactions: List[Dict[str, Any]]):
+    """Score drift (PSI) and shadow-model agreement."""
+    st.subheader("🧪 Model Monitoring")
+    if not transactions:
+        st.info("No data yet")
+        return
+
+    latest = transactions[-1]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Champion model", latest.get('model_version', 'unknown'))
+    c2.metric("Rules version", latest.get('rules_version', 'unknown'))
+    c3.metric("Shadow model", latest.get('shadow_model_version') or 'none')
+
+    scores = [float(t.get('fraud_probability', 0.0)) for t in transactions]
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Score drift (PSI)**: first 500 scores of this session vs the latest 200")
+        if len(scores) >= 700:
+            value = population_stability_index(scores[:500], scores[-200:])
+            band = "stable" if value < 0.1 else ("moderate shift" if value < 0.25 else "major shift")
+            st.metric("PSI", f"{value:.3f}", help="Heuristic bands: <0.1 stable, 0.1–0.25 moderate, >0.25 major")
+            st.caption(f"Status: {band} (the 0.1 / 0.25 cut-offs are industry rules of thumb, not statistical tests)")
+        else:
+            st.info(f"Needs 700 scored transactions ({len(scores)} so far)")
+
+    with col2:
+        st.write("**Shadow model**: scored on live traffic, never acted on")
+        shadow = [t for t in transactions if float(t.get('shadow_probability', -1)) >= 0]
+        if shadow:
+            agree = np.mean([(t.get('shadow_decision') == 'FLAG') == (t.get('decision') != 'APPROVE') for t in shadow])
+            diff = np.mean([abs(float(t['shadow_probability']) - float(t.get('fraud_probability', 0))) for t in shadow])
+            flag_rate = np.mean([t.get('shadow_decision') == 'FLAG' for t in shadow])
+            champ_rate = np.mean([t.get('decision') != 'APPROVE' for t in shadow])
+            a, b, c = st.columns(3)
+            a.metric("Decision agreement", f"{agree:.1%}")
+            b.metric("Flag rate champion / shadow", f"{champ_rate:.1%} / {flag_rate:.1%}")
+            c.metric("Mean |Δ score|", f"{diff:.4f}")
+        else:
+            st.info("No shadow model configured (set SHADOW_MODEL_BUNDLE_PATH)")
 
 
 # ===== Main Dashboard =====
@@ -906,6 +978,10 @@ def main():
         else:
             st.info("No data yet")
     
+    # Model monitoring: drift + shadow (challenger) comparison
+    st.markdown("---")
+    render_model_monitoring(list(st.session_state.transactions))
+
     # System Health Status
     st.markdown("---")
     st.subheader("🏥 System Health")

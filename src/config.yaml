@@ -1,106 +1,77 @@
+# Training configuration (Airflow DAGs mount this at /app/config.yaml).
+# The inference services use src/inference/config.yaml instead.
+# Kafka connection details and credentials come from environment variables (src/.env).
+
 mlflow:
-  experiment_name: "xgboost_fraud_detection"
-  registered_model_name: "fraud_detection_xgboost_v1"
   tracking_uri: "http://mlflow-server:5500"
-  artifact_location: "s3://mlflow/xgboost_fraud_detection"
   s3_endpoint_url: "http://minio:9000"
   bucket: "mlflow"
-  model_stage: "Production"
-  
 
 kafka:
-  bootstrap_servers: "pkc-921jm.us-east-2.aws.confluent.cloud:9092"
-  username: "TUISIFY5HCFLGXIH"
-  password: "HIhrR1hP0Oj64llWYN8E4U3gnsJ83b64OGcrFDYvnkTppiMo1UkMwUUdfSFr6PLl"
   topic: "transactions"
   output_topic: "fraud_predictions"
   legit_topic: "legit_predictions"
-  reply_topic: "transaction_replies"  # For sync scoring (optional)
-  security_protocol: "SASL_SSL"
 
-# IEEE-CIS Dataset Configuration
+# ---------------------------------------------------------------------------
+# IEEE-CIS benchmark model  (DAG: ieee_cis_fraud_detection_training)
+# ---------------------------------------------------------------------------
 data:
   ieee_cis:
     train_transaction_path: "/app/data/ieee_cis/train_transaction.csv"
     train_identity_path: "/app/data/ieee_cis/train_identity.csv"
-    chronological_split_ratio: 0.80  # 80% earliest for train, 20% latest for validation
 
-# Training Configuration - XGBoost Model
 training:
-  use_external_model: true  # Set to true to use model from fyp.ipynb, false to retrain
-  model_path: "/app/models/fraud_detection_xgboost_model.pkl"
+  experiment_name: "ieee_cis_fraud"
+  model_path: "/app/models/fraud_detection_model.pkl"
   feature_pipeline_path: "/app/models/feature_pipeline.pkl"
-  experiment_name: "xgboost_fraud_detection_ieee_cis"
-  force_cpu_only: true  # Use CPU for XGBoost (for VMs without GPU)
-  # SMOTE configuration for class imbalance handling
-  use_smote: false  # Disabled - XGBoost handles imbalance well with scale_pos_weight
-  smote_sampling_strategy: 0.15  # Not used when disabled
-  
-  # Feature selection and optimization (optimized for XGBoost)
-  use_forward_feature_selection: false  # ❌ DISABLED: Use all features with XGBoost
-  ffs_max_features: 50  # Stop FFS after 50 features (kept for later tuning)
-  
-  # Feature importance filtering (disabled for XGBoost)
-  use_importance_filter: false  # ❌ DISABLED: XGBoost uses all features effectively
-  importance_threshold: 0.0002  # Not used when disabled
-  
-  # Hyperparameter tuning disabled (using optimal params from notebook)
-  use_randomized_search: false  # Disabled - using optimal hyperparameters from comparison
-  random_search_iterations: 10  # Not used
-  # XGBoost automatically handles class imbalance with scale_pos_weight
-  scale_pos_weight_auto: true
-  # CV-based target encoding to avoid leakage
-  use_cv_target_encoding: true
-  
-  # Focal Loss not used with XGBoost (standard cross-entropy works best)
-  use_focal_loss: false  # ❌ DISABLED: XGBoost performs best with standard loss
-  focal_loss_alpha: 0.25  # Not used
-  focal_loss_gamma: 2.0  # Not used
-  # Optimized class weight for XGBoost (from notebook comparison)
-  optimized_scale_pos_weight: 27.6  # Theoretical weight for 3.5% fraud rate
-  
-  # Model Stacking disabled (single XGBoost outperforms ensemble)
-  use_model_stacking: false  # ❌ DISABLED: Single XGBoost (0.9763 AUC) is optimal
-  # K-Fold CV target encoding is already enabled above (use_cv_target_encoding: true)
+  results_path: "/app/models/metrics_ieee_cis.json"
 
-model:
-  test_size: 0.2
-  seed: 42
-  params:
-    # XGBoost optimal hyperparameters from Model_Comparison_Analysis_Complete.ipynb
-    # Performance: AUC-ROC 0.9763, F1-Score 0.6004, Recall 0.8853
-    n_estimators: 500
-    learning_rate: 0.05
-    max_depth: 7
+  # Chronological split by TransactionDT: train | early-stop | calibration | gap | test
+  split:
+    train_fraction: 0.65
+    early_stop_fraction: 0.10
+    calibration_fraction: 0.10
+    gap_days: 7                # label-maturity gap before the untouched test period
+
+  calibration_method: "sigmoid" # Platt scaling on the calibration split only
+
+  # Thresholds come from money, not F1 (see src/dags/evaluation.py)
+  cost_model:
+    margin: 0.10               # profit share of a legitimate sale
+    chargeback_fee: 15.0       # fee per chargeback
+    friction_cost: 2.0         # cost of wrongly declining / reviewing a good customer
+  daily_review_budget: 100     # analyst capacity: sizes the REVIEW band
+
+  xgboost:
+    n_estimators: 2000         # upper bound; early stopping picks the real number
+    learning_rate: 0.03
+    max_depth: 8
     subsample: 0.8
-    colsample_bytree: 0.8
-    scale_pos_weight: 1  # Auto-calculated during training
-    tree_method: "hist"
-  path: "/app/models/fraud_detection_xgboost_model.pkl"
-  feature_pipeline_path: "/app/models/feature_pipeline.pkl"
+    colsample_bytree: 0.5
+    min_child_weight: 5
+    early_stopping_rounds: 100
+    # scale_pos_weight: omitted = n_legit / n_fraud of the training split
 
-# Inference Configuration (No VAE)
-# ✅ FIX #4: Removed unused inference.threshold (now loaded from model bundle)
-# Rule-based flags will still catch high-risk transactions
-inference:
-  rule_based_thresholds:
-    very_high_amount: 10000.0
-    very_low_amount: 1.0
-    high_velocity_score: 0.7
-    rapid_transactions_1h: 5
-    amount_spike_1h: 0.8
-  sync_scoring_timeout_ms: 2000  # Timeout for synchronous scoring (optional feature)
-
-# Dashboard Configuration
-dashboard:
-  port: 8501  # Streamlit default port
-  refresh_interval_seconds: 2
-  max_display_rows: 100
-
-spark:
-  app_name: "FraudDetectionInference"
-  packages: ""  # Packages pre-installed in Docker image (Kafka jars in /spark/jars)
-  shuffle_partition: 200
-  checkpoint_location: 'checkpoints'
-
-
+# ---------------------------------------------------------------------------
+# Decision-time model served live  (DAG: decision_time_fraud_training)
+# ---------------------------------------------------------------------------
+synthetic:
+  data_path: "/app/data/synthetic/transactions.parquet"   # generated on first run
+  model_path: "/app/models/decision_time_model.pkl"
+  results_path: "/app/models/metrics_decision_time.json"
+  simulator:
+    n_customers: 5000
+    n_terminals: 10000
+    n_days: 180
+    seed: 42
+  split_days:
+    warmup: 7
+    train_end: 105
+    early_stop_end: 120
+    calibration_end: 135
+    test_start: 150            # training happens "on day 150": later chargebacks are unknown
+    test_end: 180
+  xgboost:
+    n_estimators: 1000
+    learning_rate: 0.05
+    max_depth: 6
