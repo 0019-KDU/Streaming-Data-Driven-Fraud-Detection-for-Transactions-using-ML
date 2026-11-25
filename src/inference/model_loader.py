@@ -21,129 +21,85 @@ class ModelLoader:
     Supports both LightGBM and XGBoost models.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, bundle_path: str = None, pipeline_path: str = None):
         """
-        Initialize model loader.
-
         Args:
             config: Config object with model paths
+            bundle_path / pipeline_path: override the configured paths
+                (used to load a shadow/challenger model next to the champion)
         """
         self.config = config
+        self.bundle_path = bundle_path or config.model.model_bundle_path
+        self.pipeline_path = pipeline_path or config.model.feature_pipeline_path
         self.model = None
         self.feature_pipeline = None
         self.feature_names: List[str] = []
         self.model_metadata: Dict[str, Any] = {}
         self.model_type: str = 'unknown'  # 'lightgbm', 'xgboost', or 'sklearn'
-        self.best_iteration: int = None  # For LightGBM num_iteration parameter
+        self.model_kind: str = 'ieee_cis'  # 'ieee_cis' (benchmark) or 'decision_time' (live)
+        self.best_iteration: int = None
 
     def load(self) -> None:
         """
-        Load model bundle and feature pipeline from disk.
+        Load the model bundle (and, for IEEE-CIS models, the feature pipeline).
 
         Raises:
-            FileNotFoundError: If model files don't exist
-            Exception: If loading fails
+            FileNotFoundError: If a required file does not exist
         """
-        model_path = Path(self.config.model.model_bundle_path)
-        pipeline_path = Path(self.config.model.feature_pipeline_path)
-
-        # Check files exist
+        model_path = Path(self.bundle_path)
         if not model_path.exists():
             raise FileNotFoundError(f"Model bundle not found: {model_path}")
-        if not pipeline_path.exists():
-            raise FileNotFoundError(f"Feature pipeline not found: {pipeline_path}")
 
         logger.info(f"Loading model bundle from: {model_path}")
-        try:
-            model_bundle = joblib.load(model_path)
+        bundle = joblib.load(model_path)
+        if not isinstance(bundle, dict):
+            bundle = {'model': bundle}
 
-            # Debug logging
-            logger.info(f"DEBUG: model_bundle loaded successfully")
-            logger.info(f"DEBUG: model_bundle type: {type(model_bundle)}")
-            logger.info(f"DEBUG: model_bundle is None: {model_bundle is None}")
-            logger.info(f"DEBUG: model_bundle is dict: {isinstance(model_bundle, dict)}")
+        self.model = bundle.get('model') or bundle.get('calibrated_model')
+        if self.model is None:
+            raise ValueError(f"No model found in bundle {model_path}")
+        self.feature_names = list(bundle.get('feature_names', []))
+        self.model_kind = bundle.get('model_kind', 'ieee_cis')
 
-            if hasattr(model_bundle, '__dict__'):
-                logger.info(f"DEBUG: model_bundle attributes: {list(model_bundle.__dict__.keys())}")
+        name = type(self.model).__name__
+        if 'LightGBM' in name or 'Booster' in name:
+            self.model_type = 'lightgbm'
+            self.best_iteration = bundle.get('best_iteration')
+        elif 'XGB' in name:
+            self.model_type = 'xgboost'
+        else:
+            self.model_type = 'sklearn'
 
-            # Extract components from bundle
-            if isinstance(model_bundle, dict):
-                logger.info(f"DEBUG: model_bundle is a dict with keys: {list(model_bundle.keys())}")
-                self.model = model_bundle.get('model') or model_bundle.get('calibrated_model')
-                logger.info(f"DEBUG: Extracted model from dict, type: {type(self.model)}, is None: {self.model is None}")
-                self.feature_names = model_bundle.get('feature_names', [])
-                
-                # Detect model type
-                model_class_name = type(self.model).__name__
-                if 'LightGBM' in model_class_name or 'Booster' in model_class_name:
-                    self.model_type = 'lightgbm'
-                    self.best_iteration = model_bundle.get('best_iteration', None)
-                    logger.info(f"✅ Detected LightGBM model (best_iteration={self.best_iteration})")
-                elif 'XGB' in model_class_name:
-                    self.model_type = 'xgboost'
-                    logger.info(f"✅ Detected XGBoost model")
-                else:
-                    self.model_type = 'sklearn'
-                    logger.info(f"✅ Detected scikit-learn compatible model")
-                
-                # ✅ FIX #1: Load threshold from bundle, validate against config
-                bundle_threshold = model_bundle.get('threshold')
-                config_threshold = self.config.model.base_threshold
-                
-                if bundle_threshold is not None:
-                    if abs(bundle_threshold - config_threshold) > 0.01:
-                        logger.warning(
-                            f"⚠️ THRESHOLD MISMATCH: Bundle={bundle_threshold:.4f}, "
-                            f"Config={config_threshold:.4f}. Using bundle threshold."
-                        )
-                    threshold = bundle_threshold
-                    logger.info(f"✅ Loaded threshold from model bundle: {threshold:.4f}")
-                else:
-                    threshold = config_threshold
-                    logger.warning(f"⚠️ No threshold in bundle, using config: {threshold:.4f}")
-                
-                self.model_metadata = {
-                    'model_type': self.model_type,
-                    'threshold': threshold,
-                    'metrics': model_bundle.get('metrics', {}),
-                    'n_features': len(self.feature_names),
-                    'training_date': model_bundle.get('training_date', 'unknown'),
-                    'best_iteration': self.best_iteration
-                }
-            else:
-                # Fallback: assume it's just the model (raw pickle)
-                logger.info(f"DEBUG: model_bundle is NOT a dict, treating as raw model")
-                self.model = model_bundle
-                logger.info(f"DEBUG: Assigned model_bundle to self.model, type: {type(self.model)}, is None: {self.model is None}")
-                self.feature_names = []
-                self.model_metadata = {
-                    'model_type': type(model_bundle).__name__,
-                    'threshold': self.config.model.base_threshold,
-                    'metrics': {},
-                    'n_features': 88  # Default for IEEE-CIS
-                }
-                logger.warning(f"Model bundle is not a dict, loaded raw model: {type(model_bundle)}")
+        threshold = bundle.get('threshold')
+        if threshold is None:
+            threshold = self.config.model.base_threshold
+            logger.warning(f"No threshold in bundle, using config base_threshold {threshold:.4f}")
 
-            # Final verification
-            logger.info(f"DEBUG: After assignment, self.model is None: {self.model is None}")
-            logger.info(f"DEBUG: After assignment, self.model type: {type(self.model)}")
+        self.model_metadata = {
+            'model_type': self.model_type,
+            'model_kind': self.model_kind,
+            'model_version': bundle.get('model_version', model_path.stem),
+            'threshold': float(threshold),
+            'decision_thresholds': bundle.get('decision_thresholds'),
+            'reference_scores': bundle.get('reference_scores'),
+            'metrics': bundle.get('metrics', {}),
+            'n_features': len(self.feature_names),
+            'training_date': bundle.get('training_date', 'unknown'),
+            'best_iteration': self.best_iteration,
+        }
+        logger.info(
+            f"Model loaded: kind={self.model_kind} type={self.model_type} "
+            f"version={self.model_metadata['model_version']} features={len(self.feature_names)}"
+        )
 
-            logger.info(
-                f"Model loaded successfully: {self.model_metadata.get('model_type', 'unknown')}, "
-                f"features={self.model_metadata.get('n_features', len(self.feature_names))}"
-            )
+        if self.model_kind == 'decision_time':
+            return  # features come from the online feature store, not a pipeline pickle
 
-        except Exception as e:
-            logger.error(f"Failed to load model bundle: {e}")
-            raise
-
+        pipeline_path = Path(self.pipeline_path)
+        if not pipeline_path.exists():
+            raise FileNotFoundError(f"Feature pipeline not found: {pipeline_path}")
         logger.info(f"Loading feature pipeline from: {pipeline_path}")
-        try:
-            self.feature_pipeline = joblib.load(pipeline_path)
-            logger.info("Feature pipeline loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load feature pipeline: {e}")
-            raise
+        self.feature_pipeline = joblib.load(pipeline_path)
 
     def predict(self, features_df: pd.DataFrame) -> np.ndarray:
         """
@@ -256,7 +212,7 @@ class ModelLoader:
                 f"❌ Feature count mismatch: Expected {expected_count}, got {actual_count}"
             )
         
-        logger.info(f"✅ Feature validation passed: {expected_count} features")
+        logger.debug(f"Feature validation passed: {expected_count} features")
 
 
 def load_model_artifacts(config) -> Tuple[Any, Any]:

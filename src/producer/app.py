@@ -6,7 +6,8 @@ Supports both Postman testing and programmatic integration.
 
 Endpoints:
 - POST /api/v1/transactions/submit - Submit transaction for async processing
-- POST /api/v1/transactions/score-sync - Submit transaction and get immediate fraud score (optional)
+
+Synchronous scoring is served by the inference API (src/inference/api_direct.py, POST /predict).
 - GET /health - Health check endpoint
 """
 
@@ -17,10 +18,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Union
 
-from fastapi import FastAPI, HTTPException, status
+import hmac
+
+from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
-from confluent_kafka import Producer, Consumer
+from confluent_kafka import Producer
 from dotenv import load_dotenv
 import math
 
@@ -89,16 +93,6 @@ class TransactionSubmitResponse(BaseModel):
     transaction_id: str = Field(..., description="Assigned transaction ID")
     message: str = Field(..., description="Human-readable message")
     timestamp: str = Field(..., description="Server timestamp")
-
-
-class TransactionScoreSyncResponse(BaseModel):
-    """Response for synchronous fraud scoring (optional feature)"""
-    status: str = Field(..., description="Status (approved, blocked)")
-    transaction_id: str = Field(..., description="Transaction ID")
-    decision: str = Field(..., description="APPROVE or BLOCK")
-    probability: float = Field(..., description="Fraud probability [0, 1]")
-    risk_level: str = Field(..., description="HIGH, MEDIUM, or LOW")
-    latency_ms: float = Field(..., description="Processing latency in milliseconds")
 
 
 # ===== Kafka Producer Configuration =====
@@ -177,6 +171,22 @@ class KafkaProducerService:
 kafka_producer = KafkaProducerService()
 
 
+# ===== Authentication =====
+# Callers send X-API-Key; valid keys in PRODUCER_API_KEYS (comma-separated).
+# Empty = open API, for local development only.
+PRODUCER_API_KEYS = [k.strip() for k in os.getenv("PRODUCER_API_KEYS", "").split(",") if k.strip()]
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+if not PRODUCER_API_KEYS:
+    logger.warning("PRODUCER_API_KEYS is empty: the producer API is OPEN (development only)")
+
+
+def require_api_key(key: Optional[str] = Security(_api_key_header)) -> None:
+    if not PRODUCER_API_KEYS:
+        return
+    if not key or not any(hmac.compare_digest(key.encode(), k.encode()) for k in PRODUCER_API_KEYS):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid X-API-Key")
+
+
 # ===== API Endpoints =====
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -198,7 +208,8 @@ async def health_check():
 @app.post(
     "/api/v1/transactions/submit",
     response_model=TransactionSubmitResponse,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_api_key)],
 )
 async def submit_transaction(request: TransactionSubmitRequest):
     """
@@ -248,139 +259,6 @@ async def submit_transaction(request: TransactionSubmitRequest):
 
     except Exception as e:
         logger.error(f"Error submitting transaction: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
-        )
-
-
-@app.post(
-    "/api/v1/transactions/score-sync",
-    response_model=TransactionScoreSyncResponse,
-    status_code=status.HTTP_200_OK
-)
-async def score_transaction_sync(request: TransactionSubmitRequest):
-    """
-    Submit transaction and wait for synchronous fraud score (OPTIONAL FEATURE)
-
-    This endpoint publishes the transaction to Kafka and waits for a reply
-    on the reply topic using a request-reply pattern.
-
-    Timeout: 2 seconds (configurable)
-
-    Args:
-        request: Transaction payload
-
-    Returns:
-        TransactionScoreSyncResponse with decision and fraud probability
-
-    Raises:
-        HTTPException: If scoring times out or fails
-    """
-    import time
-
-    try:
-        start_time = time.time()
-
-        # Convert request to dict
-        transaction = request.dict()
-        
-        # Clean NaN/Infinity values for JSON serialization
-        transaction = {
-            k: (None if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v)
-            for k, v in transaction.items()
-        }
-        
-        # Ensure TransactionID is a string (handles int input)
-        if transaction.get("TransactionID") is not None:
-            transaction["TransactionID"] = str(transaction["TransactionID"])
-            
-        transaction_id = transaction["TransactionID"]
-
-        logger.info(f"Synchronous scoring request: {transaction_id}")
-
-        # Send to Kafka
-        success = kafka_producer.send_transaction(transaction)
-        kafka_producer.flush()
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to publish transaction to Kafka"
-            )
-
-        # Set up consumer for reply topic (request-reply pattern)
-        reply_topic = os.getenv("KAFKA_REPLY_TOPIC", "transaction_replies")
-        timeout_ms = int(os.getenv("SYNC_SCORING_TIMEOUT_MS", "2000"))
-
-        consumer_config = {
-            "bootstrap.servers": kafka_producer.bootstrap_servers,
-            "group.id": f"sync-scorer-{transaction_id}",
-            "auto.offset.reset": "latest",
-            "enable.auto.commit": False,
-        }
-
-        if kafka_producer.kafka_username and kafka_producer.kafka_password:
-            consumer_config.update({
-                "security.protocol": "SASL_SSL",
-                "sasl.mechanism": "PLAIN",
-                "sasl.username": kafka_producer.kafka_username,
-                "sasl.password": kafka_producer.kafka_password,
-            })
-
-        consumer = Consumer(consumer_config)
-        consumer.subscribe([reply_topic])
-
-        # Poll for response (with timeout)
-        start = time.time()
-        while (time.time() - start) * 1000 < timeout_ms:
-            msg = consumer.poll(timeout=0.5)
-
-            if msg is None:
-                continue
-
-            if msg.error():
-                continue
-
-            try:
-                reply = json.loads(msg.value().decode("utf-8"))
-
-                # Check if this reply matches our transaction_id
-                if reply.get("transaction_id") == transaction_id:
-                    consumer.close()
-
-                    latency_ms = (time.time() - start_time) * 1000
-
-                    # Determine HTTP status based on decision
-                    http_status = status.HTTP_200_OK if reply.get("decision") == "APPROVE" else status.HTTP_403_FORBIDDEN
-
-                    return JSONResponse(
-                        status_code=http_status,
-                        content={
-                            "status": "approved" if reply.get("decision") == "APPROVE" else "blocked",
-                            "transaction_id": transaction_id,
-                            "decision": reply.get("decision", "APPROVE"),
-                            "probability": reply.get("probability", 0.0),
-                            "risk_level": reply.get("risk_level", "LOW"),
-                            "latency_ms": round(latency_ms, 2)
-                        }
-                    )
-            except Exception as e:
-                logger.warning(f"Error parsing reply: {str(e)}")
-                continue
-
-        # Timeout - close consumer and return timeout error
-        consumer.close()
-
-        raise HTTPException(
-            status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            detail=f"Scoring request timed out after {timeout_ms}ms. Transaction is still being processed asynchronously."
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in synchronous scoring: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"

@@ -55,6 +55,7 @@ services:
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
       - ./init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
+      - ./sql:/sql:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -219,8 +220,8 @@ services:
           echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
           echo
         fi
-        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/models
-        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,models}
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/models /sources/data/synthetic /sources/data/ieee_cis
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,models,data}
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
@@ -236,42 +237,6 @@ services:
     networks:
       - fraud-detection
 
-  airflow-cli:
-    <<: *airflow-common
-    image: airflow-cli:latest
-    profiles:
-      - debug
-    environment:
-      <<: *airflow-common-env
-      CONNECTION_CHECK_MAX_COUNT: "0"
-    # Workaround for entrypoint issue. See: https://github.com/apache/airflow/issues/16252
-    command:
-      - bash
-      - -c
-      - airflow
-    networks:
-      - fraud-detection
-  flower:
-    <<: *airflow-common
-    image: airflow-flower:latest
-    command: celery flower
-    profiles:
-      - flower
-    ports:
-      - "5555:5555"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: always
-    depends_on:
-      <<: *airflow-common-depends-on
-      airflow-init:
-        condition: service_completed_successfully
-    networks:
-      - fraud-detection
 
   # MINIO SERVER
   mc:
@@ -322,8 +287,9 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       # MLflow 3.5 security middleware
-      - MLFLOW_SERVER_ALLOWED_HOSTS=mlflow-server:5500,localhost:5500,127.0.0.1:5500,64.23.228.115:5500,167.71.224.89:5500
-      - MLFLOW_SERVER_CORS_ALLOWED_ORIGINS=http://localhost:5500,http://127.0.0.1:5500,http://mlflow-server:5500,http://64.23.228.115:5500,http://167.71.224.89:5500
+      # Add your server's public host via MLFLOW_EXTRA_HOST in .env when deploying to a VM
+      - MLFLOW_SERVER_ALLOWED_HOSTS=mlflow-server:5500,localhost:5500,127.0.0.1:5500${MLFLOW_EXTRA_HOST:+,${MLFLOW_EXTRA_HOST}}
+      - MLFLOW_SERVER_CORS_ALLOWED_ORIGINS=http://localhost:5500,http://127.0.0.1:5500,http://mlflow-server:5500
     command: >
       mlflow server --host 0.0.0.0 --port 5500 --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres/mlflow --default-artifact-root s3://mlflow
     networks:
@@ -356,17 +322,18 @@ services:
     build:
       context: .
       dockerfile: ./inference/Dockerfile
+    image: fraud-inference:latest
     container_name: fraud-inference-spark
     env_file: .env
     restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
-    environment:
-      # Kafka Configuration (Confluent Cloud)
-      - KAFKA_BOOTSTRAP_SERVERS=pkc-921jm.us-east-2.aws.confluent.cloud:9092
-      - KAFKA_USERNAME=TUISIFY5HCFLGXIH
-      - KAFKA_PASSWORD=HIhrR1hP0Oj64llWYN8E4U3gnsJ83b64OGcrFDYvnkTppiMo1UkMwUUdfSFr6PLl
+      postgres:
+        condition: service_healthy
+    environment: &inference-env
+      # Kafka Configuration: KAFKA_BOOTSTRAP_SERVERS, KAFKA_USERNAME and
+      # KAFKA_PASSWORD come from .env (see .env.example). Never hardcode them here.
       - KAFKA_INPUT_TOPIC=transactions
       - KAFKA_FRAUD_TOPIC=fraud_predictions
       - KAFKA_LEGIT_TOPIC=legit_predictions
@@ -376,9 +343,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
 
-      # Model Configuration
-      - MODEL_BUNDLE_PATH=/app/models/fraud_detection_model.pkl
+      # Model Configuration. Live default: the decision-time model
+      # (train it with the `decision_time_fraud_training` DAG). To serve the IEEE-CIS
+      # benchmark model instead, set MODEL_BUNDLE_PATH=/app/models/fraud_detection_model.pkl
+      - MODEL_BUNDLE_PATH=${MODEL_BUNDLE_PATH:-/app/models/decision_time_model.pkl}
       - FEATURE_PIPELINE_PATH=/app/models/feature_pipeline.pkl
+      # Optional challenger scored in shadow mode (logged, never acted on)
+      - SHADOW_MODEL_BUNDLE_PATH=${SHADOW_MODEL_BUNDLE_PATH:-}
+      # Decision audit log (Postgres database `fraud`, table decision_log)
+      - DECISION_LOG_DSN=postgresql://fraud:fraud@postgres:5432/fraud
 
       # Spark Configuration
       - SPARK_CHECKPOINT_LOCATION=/app/checkpoints
@@ -392,11 +365,10 @@ services:
       - MLFLOW_TRACKING_URI=http://mlflow-server:5500
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
 
-    volumes:
+    volumes: &inference-volumes
       - ./models:/app/models:ro
-      - ./config.yaml:/app/config.yaml:ro
-      - ./.env:/app/.env:ro
       - ./inference:/app/src/inference
+      - ./dags:/app/src/dags:ro
       - ./logs:/app/logs
       - spark-checkpoints:/app/checkpoints
 
@@ -404,6 +376,32 @@ services:
       - fraud-detection
 
     # Note: Spark Structured Streaming runs continuously, no healthcheck needed
+
+  # Synchronous scoring API (authorization path): POST /predict, POST /feedback
+  # Same image, same FraudScorer and same Redis feature store as the Spark job.
+  scoring-api:
+    image: fraud-inference:latest
+    depends_on:
+      inference-spark:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    container_name: fraud-scoring-api
+    env_file: .env
+    environment: *inference-env
+    command: ["python", "/app/src/inference/api_direct.py"]
+    ports:
+      - "8001:8001"
+    volumes: *inference-volumes
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - fraud-detection
 
   # Notification Service
   notification:

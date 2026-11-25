@@ -408,7 +408,10 @@ transaction = {
 }
 
 # API endpoint (update with your VM IP)
-API_URL = "http://167.71.224.89:8000/api/v1/transactions/submit"
+import os
+API_BASE = os.getenv("FRAUD_API_BASE", "http://localhost:8000")
+API_URL = f"{API_BASE}/api/v1/transactions/submit"
+DASHBOARD_URL = os.getenv("FRAUD_DASHBOARD_URL", "http://localhost:8501")
 
 print("=" * 80)
 print("SENDING TEST TRANSACTION TO FRAUD DETECTION SYSTEM")
@@ -426,6 +429,7 @@ try:
     response = requests.post(
         API_URL,
         json=transaction,
+        headers={'X-API-Key': os.getenv('FRAUD_API_KEY', '')},
         headers={"Content-Type": "application/json"},
         timeout=10
     )
@@ -439,7 +443,7 @@ try:
         print("=" * 80)
         print("\nNext steps:")
         print("1. Check inference logs for processing")
-        print("2. View dashboard at http://167.71.224.89:8501")
+        print(f"2. View dashboard at {DASHBOARD_URL}")
         print("3. Transaction should appear in 'Recent Transactions' table")
         print("\nExpected behavior:")
         print("- Transaction flows: Producer → Kafka → Inference → Dashboard")

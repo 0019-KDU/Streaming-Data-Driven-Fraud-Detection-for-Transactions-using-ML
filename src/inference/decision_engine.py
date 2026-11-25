@@ -18,6 +18,7 @@ from enum import Enum
 import numpy as np
 
 from .logging_utils import setup_logger
+from .rule_engine import RuleEngine
 
 logger = setup_logger(__name__)
 
@@ -57,6 +58,7 @@ class DecisionResult:
     # Flags
     rule_triggered: bool = False
     ato_detected: bool = False
+    rule_action: str = ""          # strongest action requested by a rule (REVIEW/BLOCK)
 
 
 class HybridDecisionEngine:
@@ -93,13 +95,30 @@ class HybridDecisionEngine:
         # Decision bands
         self.review_threshold = config.model.review_threshold  # 0.10
         self.hold_threshold = config.model.hold_threshold      # 0.20
-        self.block_threshold = config.model.block_threshold    # 0.20
-        
-        # Adjustment weights
-        self.velocity_adj = config.threshold_weights
-        self.amount_adj = 0.10
-        self.ato_adj = 0.25
-        
+        self.block_threshold = config.model.block_threshold    # 0.30
+
+        # Bundles trained with the cost model carry their own operating points:
+        # REVIEW band sized to the analyst budget, BLOCK at the cost-optimal threshold.
+        bands = (model_metadata or {}).get('decision_thresholds')
+        if bands:
+            self.base_threshold = float(bands['review'])
+            self.review_threshold = float(bands['review'])
+            self.block_threshold = float(bands['block'])
+            self.hold_threshold = (self.review_threshold + self.block_threshold) / 2
+            logger.info(f"Using cost-based bands from model bundle: review={self.review_threshold:.4f} "
+                        f"hold={self.hold_threshold:.4f} block={self.block_threshold:.4f}")
+
+        rules_cfg = getattr(config, 'rules', None)
+        self.rule_engine = RuleEngine(
+            getattr(rules_cfg, 'path', None) or None,
+            getattr(rules_cfg, 'reload_interval', 5.0),
+        )
+        if self.hold_threshold >= self.block_threshold:
+            logger.warning(
+                f"hold_threshold ({self.hold_threshold}) >= block_threshold "
+                f"({self.block_threshold}): HOLD can never be returned"
+            )
+
         # Threshold weight profiles
         self.weights = {
             'high_ato': config.threshold_weights.high_ato,
@@ -156,14 +175,15 @@ class HybridDecisionEngine:
         )
         
         # Check rule-based triggers
-        rule_triggered, rule_factors = self._check_rules(transaction_data)
+        rule_triggered, rule_factors, rule_action = self._check_rules(transaction_data)
         
         # Make final decision
         decision, risk_level = self._determine_decision(
             adjusted_prob,
             hybrid_threshold,
             ato_detected,
-            rule_triggered
+            rule_triggered,
+            rule_action == "BLOCK",
         )
         
         # Collect all risk factors
@@ -187,7 +207,8 @@ class HybridDecisionEngine:
             amount_risk=amount_risk,
             ato_risk=ato_risk,
             rule_triggered=rule_triggered,
-            ato_detected=ato_detected
+            ato_detected=ato_detected,
+            rule_action=rule_action,
         )
     
     def _calculate_hybrid_threshold(
@@ -273,53 +294,24 @@ class HybridDecisionEngine:
         
         return min(adjusted, 1.0)
     
-    def _check_rules(self, transaction_data: Dict) -> Tuple[bool, List[str]]:
+    def _check_rules(self, transaction_data: Dict) -> Tuple[bool, List[str], str]:
         """
-        Check rule-based fraud triggers.
-        
+        Evaluate the declarative rules in rules.yaml (hot-reloaded).
+
         Returns:
-            (triggered, factors) tuple
+            (triggered, reason_codes, strongest_action) where action is "", REVIEW or BLOCK
         """
-        triggered = False
-        factors = []
-        
-        amount = transaction_data.get('TransactionAmt', 0)
-        
-        # Extreme high amount
-        if amount >= 10000:
-            triggered = True
-            factors.append(f"extreme_amount_{amount:.0f}")
-        
-        # Night transaction with high amount
-        hour = transaction_data.get('dt_hour')
-        if hour and ((hour >= 22) or (hour <= 5)) and amount >= 1000:
-            triggered = True
-            factors.append(f"night_high_amount_{amount:.0f}")
-        
-        # Risky email domain
-        email_domain = transaction_data.get('P_emaildomain', '')
-        risky_domains = {
-            'anonymous.com', 'mailinator.com', 'tempmail.com',
-            '10minutemail.com', 'guerrillamail.com'
-        }
-        if email_domain in risky_domains:
-            triggered = True
-            factors.append(f"risky_email_{email_domain}")
-        
-        # Suspicious product + amount combination
-        product = transaction_data.get('ProductCD', '')
-        if product == 'W' and amount >= 5000:  # Wire transfer
-            triggered = True
-            factors.append(f"suspicious_wire_transfer_{amount:.0f}")
-        
-        return triggered, factors
+        hits = self.rule_engine.evaluate(transaction_data)
+        action = "BLOCK" if any(h.action == "BLOCK" for h in hits) else ("REVIEW" if hits else "")
+        return bool(hits), [h.factor for h in hits], action
     
     def _determine_decision(
         self,
         adjusted_prob: float,
         hybrid_threshold: float,
         ato_detected: bool,
-        rule_triggered: bool
+        rule_triggered: bool,
+        rule_block: bool = False,
     ) -> Tuple[Decision, RiskLevel]:
         """
         Determine final decision and risk level.
@@ -330,8 +322,8 @@ class HybridDecisionEngine:
         - prob >= τ_hybrid OR ato_detected OR rule_triggered → REVIEW (MEDIUM)
         - else → APPROVE (LOW)
         """
-        # BLOCK: Very high probability
-        if adjusted_prob >= self.block_threshold:
+        # BLOCK: very high probability, or an (emergency) rule demands it
+        if rule_block or adjusted_prob >= self.block_threshold:
             return Decision.BLOCK, RiskLevel.HIGH
         
         # HOLD: High probability
@@ -374,7 +366,7 @@ class HybridDecisionEngine:
         
         # Time-based factors
         hour = transaction_data.get('dt_hour')
-        if hour:
+        if hour is not None:
             if hour >= 22 or hour <= 5:
                 factors.append("night_transaction")
             elif 9 <= hour <= 17:

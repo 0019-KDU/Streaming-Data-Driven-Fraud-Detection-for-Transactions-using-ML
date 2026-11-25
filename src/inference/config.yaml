@@ -23,13 +23,18 @@ model:
   model_bundle_path: "../models/fraud_detection_model.pkl"
   feature_pipeline_path: "../models/feature_pipeline.pkl"
 
-  # IMPORTANT: These thresholds are based on training F1-optimal = 0.0564
-  # Adjusted below current range (0.019-0.023) to demonstrate fraud detection
-  base_threshold: 0.015       # Lowered for demo: catch transactions at 1.9-2.3%
-  approve_threshold: 0.015    # prob < 0.015 → APPROVE
-  review_threshold: 0.020     # 0.020 ≤ prob < 0.025 → REVIEW
-  hold_threshold: 0.025       # 0.025 ≤ prob < 0.030 → HOLD
-  block_threshold: 0.030      # prob ≥ 0.030 → BLOCK
+  # Fallback base threshold (F1-optimal from training). A `threshold` key in the
+  # model bundle takes precedence over this value.
+  # Decision bands on the risk-adjusted probability:
+  #   prob ≥ block_threshold                         → BLOCK
+  #   hold_threshold ≤ prob < block_threshold         → HOLD
+  #   prob ≥ hybrid threshold, rule hit, or ATO       → REVIEW
+  #   otherwise                                       → APPROVE
+  base_threshold: 0.0564
+  approve_threshold: 0.0564
+  review_threshold: 0.10
+  hold_threshold: 0.20
+  block_threshold: 0.30
 
 threshold_weights:
   # Weights for adaptive threshold: [w_base, w_velocity, w_amount, w_ato]

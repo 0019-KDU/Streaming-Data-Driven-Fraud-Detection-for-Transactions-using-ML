@@ -101,19 +101,14 @@ def execute_training(**context):
     try:
         metrics = train_ieee_cis_model(config_path="/app/config.yaml")
 
-        logger.info(f"Training completed successfully!")
-        logger.info(f"  Status: {metrics['status']}")
+        test = metrics["test"]["model_block"]
+        logger.info("Training completed (out-of-time test split):")
+        for key in ("auc_roc", "average_precision", "recall_at_fpr_0.01", "precision", "recall", "dollar_recall"):
+            logger.info(f"  {key}: {test[key]:.4f}")
 
-        if 'auc_pr' in metrics:
-            logger.info(f"  AUC-PR: {metrics['auc_pr']:.4f}")
-            logger.info(f"  Precision: {metrics['precision']:.4f}")
-            logger.info(f"  Recall: {metrics['recall']:.4f}")
-            logger.info(f"  F1-Score: {metrics['f1_score']:.4f}")
-
-        # Push metrics to XCom
-        context['task_instance'].xcom_push(key='training_metrics', value=metrics)
-
-        return metrics
+        summary = {"status": metrics["status"], "thresholds": metrics["thresholds"], "test": test}
+        context['task_instance'].xcom_push(key='training_metrics', value=summary)
+        return summary
 
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
@@ -173,20 +168,12 @@ This DAG trains a fraud detection model on the IEEE-CIS dataset.
 ## Tasks
 
 1. **validate_environment**: Checks that config files and data are available
-2. **execute_training**: Runs the ENHANCED training pipeline with the following steps:
-   - Load and merge transaction + identity data
-   - Create user identifiers (UID)
-   - Engineer 50+ advanced features:
-     * Velocity features (1h, 6h, 24h, 7d time-windows)
-     * Frequency encoding for categorical variables
-     * Email risk indicators
-     * Temporal patterns
-   - Chronological train/validation split (80/20)
-    - Train gradient boosting model (XGBoost/LightGBM/CatBoost) with GPU support
-   - Calibrate probabilities
-   - Initialize adaptive threshold system
-   - Log to MLflow
-   - Save enhanced artifacts to /app/models/
+2. **execute_training**: honest out-of-time training (see `ieee_cis_training.py`):
+   - chronological train / early-stop / calibration / gap / test splits
+   - feature pipeline fitted on the training period only (no future aggregates)
+   - XGBoost with scale_pos_weight (no SMOTE), early stopping, Platt calibration
+   - cost-based BLOCK threshold + REVIEW band sized to an analyst budget
+   - metrics: AP, recall@FPR, precision@k/day, dollar recall, rules-only baseline
 3. **cleanup_resources**: Clean up temporary files
 
 ## Configuration
@@ -207,5 +194,6 @@ airflow dags trigger ieee_cis_fraud_detection_training
 
 - Model: `/app/models/fraud_detection_model.pkl`
 - Feature Pipeline: `/app/models/feature_pipeline.pkl`
-- MLflow Experiment: `ieee_cis_fraud_detection`
+- Metrics: `/app/models/metrics_ieee_cis.json`
+- MLflow Experiment: `ieee_cis_fraud`
 """

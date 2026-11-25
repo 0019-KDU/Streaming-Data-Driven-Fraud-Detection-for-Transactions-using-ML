@@ -1,175 +1,89 @@
-# Direct Fraud Detection API - Testing Guide
+# Scoring API: testing guide
 
-## 🎯 Problem Fixed
+`api_direct.py` is the **synchronous authorization path**. It returns a decision in the
+request/response cycle, using the same `FraudScorer` as the Spark streaming job.
+In Docker it runs as the `scoring-api` service on port **8001**.
 
-Your test showed:
-- ❌ **Fraud probability = 0.000%** (should be higher for suspicious transactions)
-- ❌ **Amount showing $0.00** (should show actual amount)
-- ❌ **Both transactions APPROVED** (one should be HOLD/BLOCK)
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Liveness + whether the model is loaded |
+| `POST /predict` | Score one transaction: decision, probability, reason codes, explanation |
+| `POST /feedback` | Report a confirmed outcome (chargeback / analyst decision) for a past transaction |
 
-## 🔧 Solution
+## Authentication, latency budget, fallback
 
-Created `api_direct.py` - a direct prediction API that:
-- ✅ Bypasses Kafka/Spark complexity
-- ✅ Directly calls ML model for instant results
-- ✅ Shows detailed logs for debugging
-- ✅ Perfect for testing and demos
+- Every call to `/predict` and `/feedback` needs `X-API-Key`. Valid keys are listed in `SCORING_API_KEYS` (if it is empty, the API is open; development only).
+- If the model fails, or misses the `SCORING_TIMEOUT_MS` budget (default 300 ms), the response is a **rules-only decision** with `"degraded": true`, not an error. `FALLBACK_MODE=review` (default) sends clean payments to review; `approve` keeps checkout working.
+- Retrying the same `TransactionID` returns the original decision with `"replayed": true` and is not counted again in velocity.
 
----
-
-## 🚀 How to Run
-
-### On Ubuntu Server:
+## Run
 
 ```bash
-cd /home/Streaming-Data-Driven-Fraud-Detection-for-Transactions-using-ML/src/inference
-
-# Install dependencies (if needed)
-pip3 install fastapi uvicorn pandas numpy scikit-learn redis python-dotenv
-
-# Run the API
-python3 api_direct.py
+cd src && docker compose up -d redis postgres scoring-api
+# or locally (Python 3.10, from src/):  python inference/api_direct.py
 ```
 
-API will start on: **http://localhost:8001**
+The default live model is the **decision-time model** (`/app/models/decision_time_model.pkl`).
+Train it first with the `decision_time_fraud_training` Airflow DAG, or with
+`python src/dags/train_decision_time.py --config <config>`.
 
----
+## Example: normal payment
 
-## 📊 Test Your JSON Payloads
-
-### Test 1: Legitimate Transaction
 ```bash
-curl -X POST http://localhost:8001/predict \
-  -H "Content-Type: application/json" \
-  -d @../test_transaction_payload.json
+curl -s -X POST http://localhost:8001/predict -H "Content-Type: application/json" -H "X-API-Key: $FRAUD_API_KEY" -d '{
+  "TransactionID": "T1", "tx_datetime": "2026-01-15T12:00:00Z",
+  "customer_id": 42, "card1": 42, "terminal_id": 311,
+  "TransactionAmt": 35.50, "P_emaildomain": "gmail.com", "DeviceInfo": "dev_42_0",
+  "card4": "visa", "card6": "debit", "dist1": 4.2
+}'
 ```
 
-**Expected Result:**
-- Fraud prob: 2-5%
-- Decision: APPROVE
-- Risk: LOW
+## Example: account-takeover pattern
 
-### Test 2: High Fraud (Disposable Email + $2500)
+Same customer, a new device shared with other victims, a disposable email, far from home:
+
 ```bash
-curl -X POST http://localhost:8001/predict \
-  -H "Content-Type: application/json" \
-  -d @../test_synthetic_high_fraud.json
+curl -s -X POST http://localhost:8001/predict -H "Content-Type: application/json" -H "X-API-Key: $FRAUD_API_KEY" -d '{
+  "TransactionID": "T2", "tx_datetime": "2026-01-15T12:05:00Z",
+  "customer_id": 42, "card1": 42, "terminal_id": 9876,
+  "TransactionAmt": 1850.00, "P_emaildomain": "tempmail.com", "DeviceInfo": "attacker_3",
+  "card4": "visa", "card6": "debit", "dist1": 2400
+}'
 ```
 
-**Expected Result:**
-- Fraud prob: **15-40%** (HIGH!)
-- Decision: **HOLD or BLOCK**
-- Risk: **HIGH**
-- Risk factors: `["high_amount_2500", "disposable_email_yopmail", ...]`
+The response contains `decision` (APPROVE / REVIEW / HOLD / BLOCK), `fraud_probability`,
+`risk_factors` (reason codes), `explanation` (human-readable sentences built only from those
+codes), and `model_version` / `rules_version` for the audit trail.
 
-### Test 3: Velocity Attack ($999 + Gmail)
+## Example: chargeback feedback
+
 ```bash
-curl -X POST http://localhost:8001/predict \
-  -H "Content-Type: application/json" \
-  -d @../demo_velocity_burst.json
+curl -s -X POST http://localhost:8001/feedback -H "Content-Type: application/json" -H "X-API-Key: $FRAUD_API_KEY" -d '{
+  "transaction_id": "T2", "terminal_id": "9876", "tx_datetime": "2026-01-15T12:05:00Z", "is_fraud": true
+}'
 ```
 
-**Expected Result:**
-- Fraud prob: 3-8%
-- Decision: APPROVE (but with velocity monitoring)
-- Risk: MEDIUM
-- Velocity risk: > 0.5
+Later payments at terminal 9876 now see a higher `term_risk_*` feature.
 
----
+## Demo traffic and latency
 
-## 🔍 Response Format
-
-```json
-{
-  "transaction_id": "8888881",
-  "fraud_probability": 0.156,          // ✅ Real probability
-  "decision": "HOLD",                   // ✅ Correct decision
-  "risk_level": "HIGH",                 // ✅ Risk level
-  "risk_factors": [
-    "high_amount_2500",
-    "disposable_email_yopmail",
-    "ato_risk_0.8"
-  ],
-  "velocity_risk": 0.2,
-  "amount_risk": 0.8,
-  "ato_risk": 0.8,
-  "base_threshold": 0.0564,             // 5.64% from model
-  "hybrid_threshold": 0.0423,           // Adjusted threshold
-  "processing_time_ms": 45.2,
-  "timestamp": "2025-11-23T06:23:59.000Z",
-  "TransactionAmt": 2500.0,             // ✅ Correct amount
-  "card1": "18132",
-  "P_emaildomain": "yopmail.com",
-  "ProductCD": "W"
-}
+```bash
+python scripts/stream_synthetic.py --target predict --attack card_testing   # live attack demo
+python scripts/benchmark_latency.py --n 2000 --concurrency 8                # p50/p95/p99 -> results/
 ```
 
----
+## Emergency rule (no restart)
 
-## 📈 Logs Show Everything
+Edit `src/inference/rules.yaml`, set `enabled: true` on `emergency_block_terminal`, put the
+terminal id in the list, and save. Within about 5 seconds, payments at that terminal return `BLOCK`
+with reason `emergency_block_terminal_<id>`.
 
-The API logs every step:
+## Audit trail
+
+Every decision is written to Postgres (`fraud` database, `decision_log` table):
+
+```bash
+docker compose exec postgres psql -U fraud -d fraud -c \
+  "select decided_at, transaction_id, decision, fraud_probability, risk_factors, explanation, model_version
+   from decision_log order by decided_at desc limit 5;"
 ```
-Processing transaction: 9999999
-  Amount: $2500.00
-  Card: 18132
-  Email: yopmail.com
-Step 1: Feature engineering...
-  Engineered 88 features
-Step 2: ML prediction...
-  Fraud probability: 15.60%
-⚠️  Suspiciously low probability for disposable email!  # Debug warning
-Step 3: Velocity analysis...
-  Velocity risk: 0.20
-  Amount risk: 0.80
-Step 4: ATO analysis...
-  ATO risk: 0.80
-Step 5: Final decision...
-  Decision: HOLD
-  Risk level: HIGH
-  Hybrid threshold: 4.23%
-✅ Processing completed in 45.2ms
-```
-
----
-
-## ⚠️ Why Original Test Showed 0%?
-
-The issue is likely:
-
-1. **Feature Engineering Problem**: Model not receiving proper features
-2. **Spark Streaming Not Running**: The Kafka→Spark→Predictions pipeline might not be active
-3. **Missing V-Features**: Your JSON has all V1-V339 features, but they might not be extracted correctly
-
-The **direct API** bypasses this complexity and shows exactly what's happening!
-
----
-
-## 🎬 Demo Flow
-
-1. **Start Direct API**: `python3 api_direct.py`
-2. **Send Test 1** (legitimate): Shows low prob → APPROVE
-3. **Send Test 2** (high fraud): Shows **HIGH prob → HOLD/BLOCK** ✅
-4. **Compare**: Proves model CAN detect fraud when features are correct!
-
----
-
-## 🔄 Next Steps
-
-If direct API works but Kafka pipeline shows 0%:
-
-1. **Check Spark logs**: See if Spark streaming job is running
-2. **Check feature extraction**: Verify Spark extracts TransactionAmt correctly
-3. **Check model loading**: Ensure Spark loads the same model
-
----
-
-## ✅ Expected Behavior
-
-| Transaction | Amount | Email | Fraud Prob | Decision |
-|-------------|--------|-------|------------|----------|
-| test_transaction_payload | $92 | gmail.com | **2-5%** | APPROVE |
-| test_synthetic_high_fraud | $2500 | yopmail.com | **15-40%** | **HOLD/BLOCK** |
-| demo_velocity_burst | $999 | gmail.com | **3-8%** | APPROVE (monitor) |
-
-**This proves your model is working correctly!** 💪

@@ -22,7 +22,7 @@ def get_transaction_schema() -> StructType:
     return StructType([
         # Transaction identifiers
         StructField("TransactionID", StringType(), True),
-        StructField("TransactionDT", LongType(), True),
+        StructField("TransactionDT", DoubleType(), True),
         StructField("TransactionAmt", DoubleType(), True),
 
         # Product
@@ -142,27 +142,12 @@ def get_transaction_schema() -> StructType:
         StructField("id_37", StringType(), True),
         StructField("id_38", StringType(), True),
 
+        # Decision-time (simulator / live) payload fields
+        StructField("customer_id", StringType(), True),
+        StructField("terminal_id", StringType(), True),
+        StructField("tx_datetime", StringType(), True),
+
         # Metadata (may be added by producer)
         StructField("timestamp", StringType(), True),
         StructField("ip_address", StringType(), True),
-    ])
-
-
-def get_output_schema() -> StructType:
-    """
-    Returns the Spark schema for output predictions.
-
-    Returns:
-        StructType: Spark schema for prediction results
-    """
-    return StructType([
-        StructField("transaction_id", StringType(), False),
-        StructField("fraud_probability", DoubleType(), False),
-        StructField("decision", StringType(), False),
-        StructField("risk_level", StringType(), False),
-        StructField("risk_factors", StringType(), False),  # JSON array as string
-        StructField("ato_risk", DoubleType(), False),
-        StructField("velocity_risk", DoubleType(), False),
-        StructField("amount_risk", DoubleType(), False),
-        StructField("timestamp", StringType(), False),
     ])

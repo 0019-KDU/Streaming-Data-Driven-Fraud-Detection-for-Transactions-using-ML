@@ -1,0 +1,51 @@
+# Fraud rules: hot-reloaded by rule_engine.py (no restart, rebuild or retrain).
+# Edit, save, and the next transactions use the new version (checked every 5 s).
+#
+# action: REVIEW -> manual review queue      BLOCK -> decline immediately
+# reason: reason code stored with the decision; {Field} is filled from the transaction
+version: 1
+
+rules:
+  - id: extreme_amount
+    description: Single payment far above normal card limits
+    when: {field: TransactionAmt, op: ">=", value: 10000}
+    action: REVIEW
+    reason: "extreme_amount_{TransactionAmt:.0f}"
+
+  - id: night_high_amount
+    description: Large payment between 22:00 and 05:59
+    when:
+      all:
+        - any:
+            - {field: dt_hour, op: ">=", value: 22}
+            - {field: dt_hour, op: "<=", value: 5}
+        - {field: TransactionAmt, op: ">=", value: 1000}
+    action: REVIEW
+    reason: "night_high_amount_{TransactionAmt:.0f}"
+
+  - id: risky_email
+    description: Disposable / anonymous purchaser email domain
+    when:
+      field: P_emaildomain
+      op: in
+      value: [anonymous.com, mailinator.com, tempmail.com, 10minutemail.com, guerrillamail.com,
+              yopmail.com, trashmail.com, sharklasers.com, dispostable.com]
+    action: REVIEW
+    reason: "risky_email_{P_emaildomain}"
+
+  - id: suspicious_wire_transfer
+    description: Very large product-W payment
+    when:
+      all:
+        - {field: ProductCD, op: "==", value: W}
+        - {field: TransactionAmt, op: ">=", value: 5000}
+    action: REVIEW
+    reason: "suspicious_wire_transfer_{TransactionAmt:.0f}"
+
+  # ---- Emergency rule template (set enabled: true and edit the list during an attack)
+  - id: emergency_block_terminal
+    enabled: false
+    description: Terminals confirmed as breached; decline everything until the model has learned the pattern
+    when: {field: terminal_id, op: in, value: ["1234"]}
+    action: BLOCK
+    reason: "emergency_block_terminal_{terminal_id}"

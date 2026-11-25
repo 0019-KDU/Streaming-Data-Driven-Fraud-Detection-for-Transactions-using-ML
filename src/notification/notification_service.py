@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 fake = Faker()
 
 class NotificationService:
+    ACTION_TEXT = {
+        'BLOCK': 'Transaction has been BLOCKED for your protection',
+        'HOLD': 'Transaction is ON HOLD pending verification',
+        'REVIEW': 'Transaction is under manual review',
+    }
+
     def __init__(self):
         # Load environment variables
         load_dotenv(dotenv_path="/app/.env")
@@ -77,7 +83,7 @@ class NotificationService:
     def generate_user_email(self, user_id: int) -> str:
         """Generate a random email address for a user based on user_id."""
         # Seed Faker with user_id for deterministic email generation
-        Faker.seed(user_id)
+        Faker.seed(str(user_id))
         return fake.email()
 
     def send_email(self, to_email: str, transaction: Dict[str, Any]) -> bool:
@@ -85,7 +91,7 @@ class NotificationService:
         try:
             # Extract fraud detection details
             risk_level = transaction.get('risk_level', 'UNKNOWN')
-            fraud_probability = transaction.get('probability', 0.0)
+            fraud_probability = transaction.get('fraud_probability', transaction.get('probability', 0.0))
             decision = transaction.get('decision', 'REVIEW')
 
             # Construct email content with enhanced details
@@ -100,16 +106,16 @@ We have detected a potentially fraudulent transaction on your account. Please re
 Transaction Details:
 - Transaction ID: {transaction['transaction_id']}
 - User ID: {transaction.get('user_id', 'N/A')}
-- Amount: ${transaction.get('amount', 0.0):.2f} {transaction.get('currency', 'USD')}
-- Merchant: {transaction.get('merchant', 'N/A')}
-- Timestamp: {transaction['timestamp']}
-- Location: {transaction.get('location', 'N/A')}
+- Amount: ${float(transaction.get('TransactionAmt', transaction.get('amount', 0.0)) or 0.0):.2f} USD
+- Card: {transaction.get('card4', 'N/A')} ({transaction.get('card6', 'N/A')})
+- Timestamp: {transaction.get('timestamp', 'N/A')}
+- Risk Factors: {transaction.get('risk_factors', 'none')}
 
 Fraud Analysis:
 - Risk Level: {risk_level}
 - Fraud Probability: {fraud_probability:.1%}
 - Decision: {decision}
-- Action Taken: Transaction has been BLOCKED for your protection
+- Action Taken: {self.ACTION_TEXT.get(decision, 'Transaction flagged for review')}
 
 If you did not authorize this transaction, please contact us immediately at support@bank.com.
 
@@ -145,10 +151,12 @@ Fraud Prevention Team
 
             # Parse transaction data
             transaction = json.loads(msg.value().decode("utf-8"))
-            user_id = transaction.get("user_id")
-            if not user_id:
-                logger.warning("Missing user_id in transaction data")
+            # IEEE-CIS has no customer ID; card1 is the closest stable identifier
+            user_id = transaction.get("user_id") or transaction.get("card1")
+            if user_id in (None, "", "unknown", "N/A"):
+                logger.warning("No user_id/card1 in prediction; skipping notification")
                 return False
+            transaction.setdefault("user_id", user_id)
 
             # Generate user email
             to_email = self.generate_user_email(user_id)
